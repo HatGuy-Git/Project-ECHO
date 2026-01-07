@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles for spy terminal aesthetic */
+:root {
+  --mainframe-color: #00ffcc;
+  --glitch-color: #ffaa00;
+  --void-color: #0a0a0f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #0a0a0f;
+  color: #e0e0e0;
+  font-family: 'JetBrains Mono', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scanline effect overlay */
+.scanlines::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.1) 0px,
+    rgba(0, 0, 0, 0.1) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.3;
+}
+
+/* Terminal cursor blink */
+.cursor-blink::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+}
+
+/* Glowing text effects */
+.text-glow-mainframe {
+  text-shadow: 0 0 10px rgba(0, 255, 204, 0.8), 0 0 20px rgba(0, 255, 204, 0.4);
+}
+
+.text-glow-glitch {
+  text-shadow: 0 0 10px rgba(255, 170, 0, 0.8), 0 0 20px rgba(255, 170, 0, 0.4);
+}
+
+.text-glow-success {
+  text-shadow: 0 0 10px rgba(68, 255, 136, 0.8), 0 0 20px rgba(68, 255, 136, 0.4);
+}
+
+.text-glow-danger {
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.8), 0 0 20px rgba(255, 68, 68, 0.4);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #12121a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00ffcc33;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00ffcc66;
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid #00ffcc;
+  outline-offset: 2px;
+}
+
+/* Large touch targets for accessibility */
+@layer components {
+  .btn {
+    @apply px-6 py-4 text-lg font-semibold rounded-lg transition-all duration-200;
+    @apply min-h-[48px] min-w-[48px];
+    @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-mainframe focus-visible:outline-offset-2;
+  }
+
+  .btn-mainframe {
+    @apply bg-mainframe/10 border-2 border-mainframe text-mainframe;
+    @apply hover:bg-mainframe/20 hover:shadow-mainframe;
+    @apply active:bg-mainframe/30;
+  }
+
+  .btn-glitch {
+    @apply bg-glitch/10 border-2 border-glitch text-glitch;
+    @apply hover:bg-glitch/20 hover:shadow-glitch;
+    @apply active:bg-glitch/30;
+  }
+
+  .btn-solid {
+    @apply bg-mainframe text-void font-bold;
+    @apply hover:bg-mainframe-light hover:shadow-mainframe;
+    @apply active:bg-mainframe-dark;
+  }
+
+  .card {
+    @apply bg-void-light border border-mainframe/30 rounded-xl p-6;
+    @apply shadow-lg;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 text-lg;
+    @apply bg-void-lighter border-2 border-mainframe/30 rounded-lg;
+    @apply text-white placeholder-gray-500;
+    @apply focus:border-mainframe focus:outline-none;
+    @apply transition-colors duration-200;
+  }
+
+  .textarea-field {
+    @apply input-field resize-none;
+    @apply min-h-[120px];
+  }
+}
+
+/* Typewriter animation for messages */
+@keyframes typewriter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.typewriter-text span {
+  opacity: 0;
+  animation: typewriter 0.05s forwards;
+}
+
+/* Grid background pattern */
+.grid-bg {
+  background-image: 
+    linear-gradient(rgba(0, 255, 204, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 204, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Sound wave animation for TTS indicator */
+@keyframes sound-wave {
+  0%, 100% { 
+    transform: scaleY(0.5);
+    opacity: 0.6;
+  }
+  50% { 
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.animate-sound-wave {
+  animation: sound-wave 0.6s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
