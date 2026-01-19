@@ -49,6 +49,37 @@ function getAudioContext(): AudioContext {
 // Track current audio source for stopping
 let currentSource: AudioBufferSourceNode | null = null
 
+// Audio queue system to prevent speech interruption
+interface QueuedAudio {
+  blob: Blob
+  resolve: () => void
+  reject: (error: Error) => void
+}
+
+const audioQueue: QueuedAudio[] = []
+let isProcessingQueue = false
+
+/**
+ * Process the audio queue - plays audio one at a time
+ */
+async function processAudioQueue(): Promise<void> {
+  if (isProcessingQueue || audioQueue.length === 0) return
+  
+  isProcessingQueue = true
+  
+  while (audioQueue.length > 0) {
+    const item = audioQueue.shift()!
+    try {
+      await playAudioImmediate(item.blob)
+      item.resolve()
+    } catch (error) {
+      item.reject(error as Error)
+    }
+  }
+  
+  isProcessingQueue = false
+}
+
 // Session-based tracking of spoken messages to prevent duplicates on HMR
 // This persists across hot reloads but resets on full page refresh
 const spokenMessagesThisSession = new Set<string>()
@@ -146,20 +177,10 @@ function calculateRMS(audioBuffer: AudioBuffer): number {
 }
 
 /**
- * Play audio blob through the browser with volume normalization
+ * Play audio blob immediately (internal use)
  * Uses Web Audio API to analyze and normalize volume levels
  */
-export async function playAudio(audioBlob: Blob): Promise<void> {
-  // Stop any currently playing audio first to prevent overlapping
-  if (currentSource) {
-    try {
-      currentSource.stop()
-      currentSource = null
-    } catch {
-      // Source may have already stopped
-    }
-  }
-  
+async function playAudioImmediate(audioBlob: Blob): Promise<void> {
   const ctx = getAudioContext()
   
   // Resume context if it was suspended (browser autoplay policy)
@@ -204,6 +225,88 @@ export async function playAudio(audioBlob: Blob): Promise<void> {
       reject(error)
     }
   })
+}
+
+/**
+ * Play audio blob through the browser with volume normalization
+ * Queues audio to prevent interrupting currently playing speech
+ */
+export async function playAudio(audioBlob: Blob): Promise<void> {
+  return new Promise((resolve, reject) => {
+    audioQueue.push({ blob: audioBlob, resolve, reject })
+    processAudioQueue()
+  })
+}
+
+/**
+ * Play audio immediately, interrupting any currently playing audio
+ * Use sparingly - prefer playAudio() for queued playback
+ */
+export async function playAudioInterrupt(audioBlob: Blob): Promise<void> {
+  // Stop any currently playing audio
+  stopSpeech()
+  // Clear the queue
+  audioQueue.length = 0
+  isProcessingQueue = false
+  // Play immediately
+  return playAudioImmediate(audioBlob)
+}
+
+/**
+ * Pre-fetch audio and get its duration
+ * Returns the blob and duration so components can sync typing with playback
+ */
+export async function prefetchAudio(
+  text: string,
+  apiKey: string,
+  options: TTSOptions = {}
+): Promise<{ blob: Blob; duration: number } | null> {
+  const audioBlob = await textToSpeech(text, apiKey, options)
+  
+  if (!audioBlob) {
+    return null
+  }
+  
+  try {
+    const ctx = getAudioContext()
+    // Clone the array buffer so we don't consume the blob
+    const arrayBuffer = await audioBlob.arrayBuffer()
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+    
+    // Create a new blob from the original data for playback
+    const newBlob = new Blob([arrayBuffer], { type: audioBlob.type })
+    
+    return {
+      blob: newBlob,
+      duration: audioBuffer.duration
+    }
+  } catch (error) {
+    console.error('Error getting audio duration:', error)
+    return { blob: audioBlob, duration: 5 } // Fallback duration estimate
+  }
+}
+
+/**
+ * Pre-fetch audio as a character and get duration
+ */
+export async function prefetchCharacterAudio(
+  text: string,
+  character: CharacterType,
+  apiKey: string,
+  apiKeys: ApiKeys
+): Promise<{ blob: Blob; duration: number } | null> {
+  const charConfig = CHARACTER_VOICES[character]
+  
+  const voiceId = character === 'mainframe'
+    ? (apiKeys.mainframeVoiceId || charConfig.defaultVoiceId)
+    : (apiKeys.drGlitchVoiceId || charConfig.defaultVoiceId)
+  
+  const options: TTSOptions = {
+    voiceId,
+    ...charConfig.defaultSettings,
+  }
+  
+  return prefetchAudio(text, apiKey, options)
 }
 
 /**

@@ -2,6 +2,15 @@ import { createContext, useContext, useReducer, useEffect, ReactNode } from 'rea
 import type { Intel, ApiKeys, RecitationProgress, DictationProgress } from '../types'
 import { storage } from '../services/storage'
 
+// Environment variable defaults (set in .env file)
+const ENV_API_KEYS: ApiKeys = {
+  assemblyAI: import.meta.env.VITE_ASSEMBLYAI_API_KEY || null,
+  elevenLabs: import.meta.env.VITE_ELEVENLABS_API_KEY || null,
+  elevenLabsVoiceId: null,
+  mainframeVoiceId: import.meta.env.VITE_MAINFRAME_VOICE_ID || null,
+  drGlitchVoiceId: import.meta.env.VITE_DR_GLITCH_VOICE_ID || null,
+}
+
 interface AppState {
   // Current intel (poem and dictation passages)
   currentIntel: Intel | null
@@ -30,13 +39,7 @@ type AppAction =
 
 const initialState: AppState = {
   currentIntel: null,
-  apiKeys: {
-    assemblyAI: null,
-    elevenLabs: null,
-    elevenLabsVoiceId: null,
-    mainframeVoiceId: null,
-    drGlitchVoiceId: null,
-  },
+  apiKeys: ENV_API_KEYS, // Use environment variables as initial defaults
   recitationProgress: null,
   dictationProgress: null,
   isLoading: true,
@@ -92,11 +95,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           storage.getApiKeys(),
         ])
         
+        // Merge saved keys with environment defaults (saved keys take priority)
+        const mergedApiKeys: ApiKeys = {
+          assemblyAI: savedApiKeys?.assemblyAI || ENV_API_KEYS.assemblyAI,
+          elevenLabs: savedApiKeys?.elevenLabs || ENV_API_KEYS.elevenLabs,
+          elevenLabsVoiceId: savedApiKeys?.elevenLabsVoiceId || ENV_API_KEYS.elevenLabsVoiceId,
+          mainframeVoiceId: savedApiKeys?.mainframeVoiceId || ENV_API_KEYS.mainframeVoiceId,
+          drGlitchVoiceId: savedApiKeys?.drGlitchVoiceId || ENV_API_KEYS.drGlitchVoiceId,
+        }
+        
         dispatch({
           type: 'LOAD_STATE',
           payload: {
             currentIntel: savedIntel,
-            apiKeys: savedApiKeys || initialState.apiKeys,
+            apiKeys: mergedApiKeys,
           },
         })
       } catch (error) {
