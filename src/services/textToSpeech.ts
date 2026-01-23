@@ -38,12 +38,33 @@ export const CHARACTER_VOICES = {
 
 // Shared AudioContext for Web Audio API operations
 let audioContext: AudioContext | null = null
+let audioContextReady = false
 
 function getAudioContext(): AudioContext {
   if (!audioContext) {
     audioContext = new AudioContext()
   }
   return audioContext
+}
+
+/**
+ * Initialize/resume the AudioContext - must be called from a user gesture (click, etc.)
+ * Call this early (e.g., on first button click) to enable audio playback
+ */
+export async function initAudioContext(): Promise<void> {
+  const ctx = getAudioContext()
+  if (ctx.state === 'suspended') {
+    await ctx.resume()
+  }
+  audioContextReady = true
+  console.log('[AudioContext] Initialized, state:', ctx.state)
+}
+
+/**
+ * Check if audio context is ready for playback
+ */
+export function isAudioReady(): boolean {
+  return audioContextReady && audioContext?.state === 'running'
 }
 
 // Track current audio source for stopping
@@ -185,7 +206,21 @@ async function playAudioImmediate(audioBlob: Blob): Promise<void> {
   
   // Resume context if it was suspended (browser autoplay policy)
   if (ctx.state === 'suspended') {
-    await ctx.resume()
+    console.log('[AudioContext] Attempting to resume suspended context...')
+    try {
+      await ctx.resume()
+      console.log('[AudioContext] Resumed, state:', ctx.state)
+    } catch (error) {
+      console.error('[AudioContext] Failed to resume:', error)
+      // If we can't resume, try browser TTS as fallback
+      throw new Error('AudioContext suspended - needs user interaction')
+    }
+  }
+  
+  // Wait a moment for context to be fully ready
+  if (ctx.state !== 'running') {
+    console.log('[AudioContext] Waiting for context to be running, current state:', ctx.state)
+    await new Promise(resolve => setTimeout(resolve, 100))
   }
   
   // Decode the audio blob into an AudioBuffer

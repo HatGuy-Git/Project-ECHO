@@ -181,9 +181,11 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
           </h1>
           <MainframeMessage
             message="Outstanding work, Agent! You've successfully completed the Voice Lock protocol. Dr. Glitch's audio corruption has been neutralized. Your recitation skills are now certified."
+            speakOnType={true}
           />
           <GlitchMessage
             message="NOOOO! My perfectly chaotic plans, ruined by your... your... ORGANIZED MEMORIZATION! This isn't over, Agent!"
+            speakOnType={true}
           />
           <div className="pt-6">
             <ReadyButton label="Return to Base" onClick={() => onNavigate('home')} />
@@ -236,7 +238,7 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
           showNumbers={false}
         />
 
-        {/* Instructions based on current step */}
+        {/* Instructions based on current step - audio only */}
         <MainframeMessage
           message={
             currentStep === 'signal-sync'
@@ -247,13 +249,15 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
               ? `Step 3: SECTOR CLEARANCE. Solo broadcast. Say stanza ${currentStanza + 1} yourself. I am listening.`
               : `Step 4: MASTER BROADCAST. Final test. Transmit the full message from memory.`
           }
-          showTyping={false}
+          speakOnType={true}
+          hideText={true}
         />
 
         {/* Dr. Glitch interruption */}
         {showGlitch && (
           <GlitchMessage
             message="Stop reading it together! It's too organized! I can feel my chaos powers weakening!"
+            speakOnType={true}
           />
         )}
 
@@ -336,7 +340,7 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
                 <div className="text-center space-y-4">
                   <MainframeMessage
                     message="Signal static detected. Glitch is jamming the frequency. Did you say it correctly, or would you like to try again?"
-                    showTyping={false}
+                    speakOnType={true}
                   />
                   <div className="flex gap-4 justify-center">
                     <ReadyButton label="I said it right" onClick={handleNext} variant="mainframe" size="normal" />
@@ -349,7 +353,7 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
                 <div className="text-center space-y-4">
                   <MainframeMessage
                     message={`Partial transmission received (${comparisonResult.split(':')[1]} match). Let's return to Signal Sync to clear the channel.`}
-                    showTyping={false}
+                    speakOnType={true}
                   />
                   <ReadyButton label="Return to Signal Sync" onClick={handleRetry} variant="glitch" />
                 </div>

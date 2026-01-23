@@ -18,7 +18,8 @@ export default function GlitchMessage({
   const { state } = useApp()
   
   // Create a stable ID for this message to track across HMR
-  const messageId = useMemo(() => `glitch:${message.slice(0, 50)}`, [message])
+  // Use full message to ensure unique messages are unique
+  const messageId = useMemo(() => `glitch:${message}`, [message])
   
   // Check if already spoken this session (survives HMR)
   const alreadySpoken = hasSpokenMessage(messageId)
@@ -95,6 +96,9 @@ export default function GlitchMessage({
   // Prefetch audio, then start both playback and typing together
   useEffect(() => {
     isMountedRef.current = true
+    
+    // Reset fetching flag when message changes
+    isFetchingRef.current = false
     
     // Clear any existing typing interval
     if (typingIntervalRef.current) {

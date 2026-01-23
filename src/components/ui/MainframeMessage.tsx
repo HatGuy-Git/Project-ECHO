@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useApp } from '../../context/AppContext'
-import { prefetchCharacterAudio, playAudio, hasSpokenMessage, markMessageSpoken } from '../../services/textToSpeech'
+import { prefetchCharacterAudio, playAudio, hasSpokenMessage, markMessageSpoken, isAudioReady, initAudioContext } from '../../services/textToSpeech'
 
 interface MainframeMessageProps {
   message: string
   showTyping?: boolean
   speakOnType?: boolean // Whether to speak the message with TTS
+  hideText?: boolean // Hide text display entirely (audio only)
   onComplete?: () => void
 }
 
@@ -13,12 +14,14 @@ export default function MainframeMessage({
   message, 
   showTyping = true,
   speakOnType = false,
+  hideText = false,
   onComplete 
 }: MainframeMessageProps) {
   const { state } = useApp()
   
   // Create a stable ID for this message to track across HMR
-  const messageId = useMemo(() => `mainframe:${message.slice(0, 50)}`, [message])
+  // Use full message to ensure different reps/stanzas are unique
+  const messageId = useMemo(() => `mainframe:${message}`, [message])
   
   // Check if already spoken this session (survives HMR)
   const alreadySpoken = hasSpokenMessage(messageId)
@@ -90,17 +93,30 @@ export default function MainframeMessage({
   useEffect(() => {
     isMountedRef.current = true
     
+    // Reset fetching flag when message changes
+    isFetchingRef.current = false
+    
     // Clear any existing typing interval
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current)
       typingIntervalRef.current = null
     }
     
+    // Debug logging
+    console.log('[MainframeMessage] Effect running:', {
+      speakOnType,
+      hideText,
+      hasApiKey: !!state.apiKeys.elevenLabs,
+      messagePreview: message.slice(0, 50),
+      alreadySpoken: hasSpokenMessage(messageId),
+    })
+    
     if (!speakOnType) {
+      console.log('[MainframeMessage] Skipping speech: speakOnType is false')
       setIsSpeechComplete(true)
       setIsLoading(false)
       // Start typing without audio sync
-      if (showTyping) {
+      if (showTyping && !hideText) {
         setDisplayedText('')
         setIsTypingComplete(false)
         let index = 0
@@ -125,6 +141,7 @@ export default function MainframeMessage({
     
     // Check session-level tracking (survives HMR)
     if (hasSpokenMessage(messageId)) {
+      console.log('[MainframeMessage] Skipping speech: already spoken this session')
       setIsSpeechComplete(true)
       setIsLoading(false)
       setDisplayedText(message)
@@ -134,10 +151,11 @@ export default function MainframeMessage({
     
     if (!state.apiKeys.elevenLabs) {
       // No API key - just do typing animation without speech
+      console.log('[MainframeMessage] Skipping speech: no ElevenLabs API key')
       setIsSpeaking(false)
       setIsSpeechComplete(true)
       setIsLoading(false)
-      if (showTyping) {
+      if (showTyping && !hideText) {
         setDisplayedText('')
         setIsTypingComplete(false)
         let index = 0
@@ -161,19 +179,47 @@ export default function MainframeMessage({
     }
     
     // Prevent duplicate fetches
-    if (isFetchingRef.current) return
+    if (isFetchingRef.current) {
+      console.log('[MainframeMessage] Skipping speech: already fetching')
+      return
+    }
     isFetchingRef.current = true
     setIsLoading(true)
+    
+    console.log('[MainframeMessage] Starting audio fetch...')
     
     // Prefetch audio, then start both playback and typing together
     prefetchCharacterAudio(message, 'mainframe', state.apiKeys.elevenLabs, state.apiKeys)
       .then(async (result) => {
-        if (!isMountedRef.current) return
+        if (!isMountedRef.current) {
+          console.log('[MainframeMessage] Component unmounted, aborting')
+          return
+        }
         
         // Mark as spoken only after we've committed to playing
         markMessageSpoken(messageId)
         
         if (result) {
+          console.log('[MainframeMessage] Audio fetched, duration:', result.duration)
+          
+          // Ensure audio context is ready (may need to wait for user interaction)
+          if (!isAudioReady()) {
+            console.log('[MainframeMessage] Waiting for audio context to be ready...')
+            // Wait up to 2 seconds for user interaction to initialize audio
+            for (let i = 0; i < 20; i++) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+              if (isAudioReady()) break
+            }
+            // Try to init one more time
+            if (!isAudioReady()) {
+              try {
+                await initAudioContext()
+              } catch {
+                console.log('[MainframeMessage] Could not initialize audio context')
+              }
+            }
+          }
+          
           setIsLoading(false)
           setIsSpeaking(true)
           
@@ -183,8 +229,9 @@ export default function MainframeMessage({
           // Play audio and wait for completion
           try {
             await playAudio(result.blob)
+            console.log('[MainframeMessage] Audio playback complete')
           } catch (error) {
-            console.error('Audio playback error:', error)
+            console.error('[MainframeMessage] Audio playback error:', error)
           }
           
           if (isMountedRef.current) {
@@ -193,12 +240,14 @@ export default function MainframeMessage({
           }
         } else {
           // Audio fetch failed - just do typing animation
+          console.log('[MainframeMessage] Audio fetch returned null')
           setIsLoading(false)
           setIsSpeechComplete(true)
           startTypingAnimation(5) // Default 5 second duration
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('[MainframeMessage] Audio fetch error:', error)
         if (isMountedRef.current) {
           // Mark as spoken even on failure to prevent retry loops
           markMessageSpoken(messageId)
@@ -218,6 +267,34 @@ export default function MainframeMessage({
   }, [message, messageId, speakOnType, showTyping, state.apiKeys, startTypingAnimation])
 
   const isComplete = isTypingComplete && isSpeechComplete
+
+  // Audio-only mode: just show avatar with speaking indicator
+  if (hideText) {
+    return (
+      <div className="flex items-center justify-center p-4">
+        <div className={`w-16 h-16 rounded-lg bg-mainframe/20 border-2 border-mainframe/50 flex items-center justify-center transition-all ${
+          isSpeaking ? 'animate-pulse ring-4 ring-mainframe/50 scale-110' : ''
+        } ${isLoading ? 'animate-pulse' : ''}`}>
+          <span className="text-3xl">🖥️</span>
+        </div>
+        {(isSpeaking || isLoading) && (
+          <div className="ml-4 flex items-center gap-2">
+            <span className="text-mainframe font-semibold">MAINFRAME</span>
+            {isLoading && (
+              <span className="text-sm text-mainframe/70">Establishing secure channel...</span>
+            )}
+            {isSpeaking && (
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-1 h-4 bg-mainframe animate-sound-wave" style={{ animationDelay: '0ms' }} />
+                <span className="inline-block w-1 h-6 bg-mainframe animate-sound-wave" style={{ animationDelay: '150ms' }} />
+                <span className="inline-block w-1 h-3 bg-mainframe animate-sound-wave" style={{ animationDelay: '300ms' }} />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-4 items-start p-4 bg-void-light/50 border border-mainframe/30 rounded-lg">
