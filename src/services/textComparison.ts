@@ -94,7 +94,6 @@ export function compareTexts(original: string, input: string): ComparisonResult 
   let correctCount = 0
   
   // Use dynamic programming to align words (simplified LCS-based approach)
-  const maxLen = Math.max(originalWords.length, inputWords.length)
   
   let origIndex = 0
   let inputIndex = 0

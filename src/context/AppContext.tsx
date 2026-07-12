@@ -39,7 +39,7 @@ type AppAction =
 
 const initialState: AppState = {
   currentIntel: null,
-  apiKeys: ENV_API_KEYS, // Use environment variables as initial defaults
+  apiKeys: ENV_API_KEYS,
   recitationProgress: null,
   dictationProgress: null,
   isLoading: true,
@@ -77,11 +77,33 @@ interface AppContextType {
   setIntel: (intel: Intel) => Promise<void>
   clearIntel: () => Promise<void>
   setApiKeys: (keys: Partial<ApiKeys>) => Promise<void>
+  setRecitationProgress: (progress: RecitationProgress | null) => Promise<void>
+  setDictationProgress: (progress: DictationProgress | null) => Promise<void>
   hasApiKeys: () => boolean
   hasIntel: () => boolean
+  hasActiveRecitation: () => boolean
+  hasActiveDictation: () => boolean
 }
 
 const AppContext = createContext<AppContextType | null>(null)
+
+function isActiveRecitation(progress: RecitationProgress | null, intelId: string | undefined): boolean {
+  return !!(
+    progress &&
+    intelId &&
+    progress.intelId === intelId &&
+    progress.currentStep !== 'complete'
+  )
+}
+
+function isActiveDictation(progress: DictationProgress | null, intelId: string | undefined): boolean {
+  return !!(
+    progress &&
+    intelId &&
+    progress.intelId === intelId &&
+    progress.currentPhase !== 'complete'
+  )
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
@@ -90,12 +112,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function loadSavedState() {
       try {
-        const [savedIntel, savedApiKeys] = await Promise.all([
+        const [savedIntel, savedApiKeys, savedRecitation, savedDictation] = await Promise.all([
           storage.getCurrentIntel(),
           storage.getApiKeys(),
+          storage.getRecitationProgress(),
+          storage.getDictationProgress(),
         ])
         
-        // Merge saved keys with environment defaults (saved keys take priority)
         const mergedApiKeys: ApiKeys = {
           assemblyAI: savedApiKeys?.assemblyAI || ENV_API_KEYS.assemblyAI,
           elevenLabs: savedApiKeys?.elevenLabs || ENV_API_KEYS.elevenLabs,
@@ -103,12 +126,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           mainframeVoiceId: savedApiKeys?.mainframeVoiceId || ENV_API_KEYS.mainframeVoiceId,
           drGlitchVoiceId: savedApiKeys?.drGlitchVoiceId || ENV_API_KEYS.drGlitchVoiceId,
         }
+
+        // Discard progress that doesn't match current intel
+        const intelId = savedIntel?.id
+        const recitationProgress = isActiveRecitation(savedRecitation, intelId) ? savedRecitation : null
+        const dictationProgress = isActiveDictation(savedDictation, intelId) ? savedDictation : null
         
         dispatch({
           type: 'LOAD_STATE',
           payload: {
             currentIntel: savedIntel,
             apiKeys: mergedApiKeys,
+            recitationProgress,
+            dictationProgress,
           },
         })
       } catch (error) {
@@ -122,11 +152,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setIntel = async (intel: Intel) => {
     await storage.saveIntel(intel)
+    // New intel resets training progress
+    await storage.clearProgress()
     dispatch({ type: 'SET_INTEL', payload: intel })
+    dispatch({ type: 'SET_RECITATION_PROGRESS', payload: null })
+    dispatch({ type: 'SET_DICTATION_PROGRESS', payload: null })
   }
 
   const clearIntel = async () => {
     await storage.clearCurrentIntel()
+    await storage.clearProgress()
     dispatch({ type: 'CLEAR_INTEL' })
   }
 
@@ -134,6 +169,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newKeys = { ...state.apiKeys, ...keys }
     await storage.saveApiKeys(newKeys)
     dispatch({ type: 'SET_API_KEYS', payload: keys })
+  }
+
+  const setRecitationProgress = async (progress: RecitationProgress | null) => {
+    await storage.saveRecitationProgress(progress)
+    dispatch({ type: 'SET_RECITATION_PROGRESS', payload: progress })
+  }
+
+  const setDictationProgress = async (progress: DictationProgress | null) => {
+    await storage.saveDictationProgress(progress)
+    dispatch({ type: 'SET_DICTATION_PROGRESS', payload: progress })
   }
 
   const hasApiKeys = () => {
@@ -144,6 +189,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return !!(state.currentIntel?.poem || state.currentIntel?.dictation)
   }
 
+  const hasActiveRecitation = () => {
+    return isActiveRecitation(state.recitationProgress, state.currentIntel?.id)
+  }
+
+  const hasActiveDictation = () => {
+    return isActiveDictation(state.dictationProgress, state.currentIntel?.id)
+  }
+
   return (
     <AppContext.Provider
       value={{
@@ -152,8 +205,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIntel,
         clearIntel,
         setApiKeys,
+        setRecitationProgress,
+        setDictationProgress,
         hasApiKeys,
         hasIntel,
+        hasActiveRecitation,
+        hasActiveDictation,
       }}
     >
       {children}
@@ -168,4 +225,3 @@ export function useApp() {
   }
   return context
 }
-

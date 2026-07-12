@@ -5,7 +5,7 @@
  * Designed to be swappable - can later point to our own backend instead of AssemblyAI directly.
  */
 
-import type { TranscriptionResult } from '../types'
+import type { TranscriptionOptions, TranscriptionResult } from '../types'
 
 const ASSEMBLYAI_API_URL = 'https://api.assemblyai.com/v2'
 
@@ -21,14 +21,54 @@ interface AssemblyAITranscriptResponse {
   error?: string
 }
 
+const MAX_KEYTERMS = 200
+
+/**
+ * Build keyterms from expected recitation text to boost STT accuracy.
+ * Includes individual words and line/stanza phrases (max 6 words per phrase).
+ */
+export function buildKeytermsFromText(expectedText: string): string[] {
+  const terms = new Set<string>()
+
+  // Add line/stanza phrases (up to 6 words each, per AssemblyAI limits)
+  for (const line of expectedText.split(/\n+/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    const words = trimmed.split(/\s+/)
+    if (words.length <= 6) {
+      terms.add(trimmed)
+    } else {
+      // Split long lines into 6-word chunks
+      for (let i = 0; i < words.length; i += 6) {
+        terms.add(words.slice(i, i + 6).join(' '))
+      }
+    }
+  }
+
+  // Add distinctive individual words (skip very short/common ones)
+  for (const word of expectedText.split(/\s+/)) {
+    const clean = word.replace(/[^\w'-]/g, '')
+    if (clean.length >= 3) {
+      terms.add(clean)
+    }
+  }
+
+  return [...terms].slice(0, MAX_KEYTERMS)
+}
+
 /**
  * Upload audio file to AssemblyAI and get transcription
  */
 export async function transcribeAudio(
   audioBlob: Blob,
-  apiKey: string
+  apiKey: string,
+  options: TranscriptionOptions = {}
 ): Promise<TranscriptionResult> {
   try {
+    const keyterms = options.keyterms
+      ?? (options.expectedText ? buildKeytermsFromText(options.expectedText) : undefined)
+
     // Step 1: Upload the audio file
     const uploadResponse = await fetch(`${ASSEMBLYAI_API_URL}/upload`, {
       method: 'POST',
@@ -45,17 +85,23 @@ export async function transcribeAudio(
 
     const uploadData: AssemblyAIUploadResponse = await uploadResponse.json()
 
-    // Step 2: Create transcription request
+    // Step 2: Create transcription request with Universal-3 Pro + keyterms
+    const transcriptBody: Record<string, unknown> = {
+      audio_url: uploadData.upload_url,
+      speech_models: ['universal-3-pro', 'universal-2'],
+    }
+
+    if (keyterms && keyterms.length > 0) {
+      transcriptBody.keyterms_prompt = keyterms
+    }
+
     const transcriptResponse = await fetch(`${ASSEMBLYAI_API_URL}/transcript`, {
       method: 'POST',
       headers: {
         'Authorization': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        audio_url: uploadData.upload_url,
-        language_code: 'en',
-      }),
+      body: JSON.stringify(transcriptBody),
     })
 
     if (!transcriptResponse.ok) {
@@ -149,5 +195,3 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
     return false
   }
 }
-
-

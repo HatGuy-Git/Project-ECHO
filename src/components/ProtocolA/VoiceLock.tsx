@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { Screen } from '../../App'
 import { useApp } from '../../context/AppContext'
 import type { RecitationStep } from '../../types'
@@ -26,26 +26,46 @@ const STEP_NAMES: Record<RecitationStep, string> = {
 }
 
 export default function VoiceLock({ onNavigate }: VoiceLockProps) {
-  const { state } = useApp()
+  const { state, setRecitationProgress } = useApp()
   const poem = state.currentIntel?.poem
+  const intelId = state.currentIntel?.id ?? ''
+  const saved = state.recitationProgress
+
+  const stanzas = poem?.content.split(/\n\s*\n/).filter(s => s.trim()) || []
+  const totalStanzas = stanzas.length || 1
+  const resumeFromSaved = saved?.intelId === intelId && saved.currentStep !== 'complete'
   
   // State
-  const [currentStep, setCurrentStep] = useState<RecitationStep>('signal-sync')
-  const [currentRep, setCurrentRep] = useState(1)
-  const [currentStanza, setCurrentStanza] = useState(0)
+  const [currentStep, setCurrentStep] = useState<RecitationStep>(
+    resumeFromSaved ? saved.currentStep : 'signal-sync'
+  )
+  const [currentRep, setCurrentRep] = useState(resumeFromSaved ? saved.currentRep : 1)
+  const [currentStanza, setCurrentStanza] = useState(resumeFromSaved ? saved.currentStanza : 0)
   const [isReady, setIsReady] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showGlitch, setShowGlitch] = useState(false)
   const [comparisonResult, setComparisonResult] = useState<string | null>(null)
-  const [showSuccess, setShowSuccess] = useState(false)
+  const [, setShowSuccess] = useState(false)
 
   const { isRecording, audioBlob, startRecording, stopRecording, clearRecording } = useAudioRecorder()
 
-  // Split poem into stanzas (by blank lines) or lines
-  const stanzas = poem?.content.split(/\n\s*\n/).filter(s => s.trim()) || []
-  const totalStanzas = stanzas.length || 1
   const currentText = stanzas[currentStanza] || poem?.content || ''
+
+  // Persist progress as the student advances
+  useEffect(() => {
+    if (!intelId || !poem || currentStep === 'complete') return
+
+    void setRecitationProgress({
+      intelId,
+      currentStep,
+      currentStanza,
+      totalStanzas,
+      currentRep,
+      repsRequired: REPS_REQUIRED,
+      sectorsCleared: currentStanza,
+    })
+  }, [intelId, poem, currentStep, currentStanza, totalStanzas, currentRep, setRecitationProgress])
 
   // Handle speaking the text
   const handleSpeak = useCallback(async () => {
@@ -75,7 +95,10 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
     setComparisonResult(null)
 
     try {
-      const result = await transcribeAudio(audioBlob, state.apiKeys.assemblyAI)
+      const expectedText = currentStep === 'master-broadcast' ? (poem?.content ?? currentText) : currentText
+      const result = await transcribeAudio(audioBlob, state.apiKeys.assemblyAI, {
+        expectedText,
+      })
       
       if (!result.success) {
         setComparisonResult('signal-static')
@@ -97,7 +120,7 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
       setIsProcessing(false)
       clearRecording()
     }
-  }, [audioBlob, currentText, state.apiKeys.assemblyAI, clearRecording])
+  }, [audioBlob, currentText, currentStep, poem?.content, state.apiKeys.assemblyAI, clearRecording])
 
   // Proceed to next rep or step
   const handleNext = () => {
@@ -128,6 +151,7 @@ export default function VoiceLock({ onNavigate }: VoiceLockProps) {
       }
     } else if (currentStep === 'master-broadcast') {
       setCurrentStep('complete')
+      void setRecitationProgress(null)
     }
   }
 

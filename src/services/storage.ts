@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Intel, ApiKeys, Passage } from '../types'
+import type { Intel, ApiKeys, Passage, RecitationProgress, DictationProgress } from '../types'
 
 // Define the database schema
 interface PassageRecord {
@@ -36,6 +36,14 @@ db.version(1).stores({
   intel: 'id, isCurrent, createdAt',
   settings: 'key',
 })
+
+const API_KEY_SETTINGS = [
+  'assemblyAI',
+  'elevenLabs',
+  'elevenLabsVoiceId',
+  'mainframeVoiceId',
+  'drGlitchVoiceId',
+] as const
 
 // Storage service
 export const storage = {
@@ -106,17 +114,16 @@ export const storage = {
 
   // API Keys operations
   async saveApiKeys(keys: ApiKeys): Promise<void> {
-    const entries = [
-      { key: 'assemblyAI', value: keys.assemblyAI || '' },
-      { key: 'elevenLabs', value: keys.elevenLabs || '' },
-      { key: 'elevenLabsVoiceId', value: keys.elevenLabsVoiceId || '' },
-    ]
+    const entries = API_KEY_SETTINGS.map(key => ({
+      key,
+      value: keys[key] || '',
+    }))
     
     await db.settings.bulkPut(entries)
   },
 
   async getApiKeys(): Promise<ApiKeys | null> {
-    const records = await db.settings.bulkGet(['assemblyAI', 'elevenLabs', 'elevenLabsVoiceId'])
+    const records = await db.settings.bulkGet([...API_KEY_SETTINGS])
     
     if (!records.some(r => r?.value)) {
       return null
@@ -126,7 +133,51 @@ export const storage = {
       assemblyAI: records[0]?.value || null,
       elevenLabs: records[1]?.value || null,
       elevenLabsVoiceId: records[2]?.value || null,
+      mainframeVoiceId: records[3]?.value || null,
+      drGlitchVoiceId: records[4]?.value || null,
     }
+  },
+
+  // Training progress
+  async saveRecitationProgress(progress: RecitationProgress | null): Promise<void> {
+    await db.settings.put({
+      key: 'recitationProgress',
+      value: progress ? JSON.stringify(progress) : '',
+    })
+  },
+
+  async getRecitationProgress(): Promise<RecitationProgress | null> {
+    const record = await db.settings.get('recitationProgress')
+    if (!record?.value) return null
+    try {
+      return JSON.parse(record.value) as RecitationProgress
+    } catch {
+      return null
+    }
+  },
+
+  async saveDictationProgress(progress: DictationProgress | null): Promise<void> {
+    await db.settings.put({
+      key: 'dictationProgress',
+      value: progress ? JSON.stringify(progress) : '',
+    })
+  },
+
+  async getDictationProgress(): Promise<DictationProgress | null> {
+    const record = await db.settings.get('dictationProgress')
+    if (!record?.value) return null
+    try {
+      return JSON.parse(record.value) as DictationProgress
+    } catch {
+      return null
+    }
+  },
+
+  async clearProgress(): Promise<void> {
+    await db.settings.bulkPut([
+      { key: 'recitationProgress', value: '' },
+      { key: 'dictationProgress', value: '' },
+    ])
   },
 
   // Utility to generate unique IDs
@@ -136,5 +187,3 @@ export const storage = {
 }
 
 export default db
-
-

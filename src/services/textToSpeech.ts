@@ -12,6 +12,12 @@ const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1'
 // Default voice ID (Rachel - clear, professional female voice)
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'
 
+/** Turbo for clear passage reading; v3 for expressive character dialogue */
+export const TTS_MODELS = {
+  passage: 'eleven_turbo_v2_5',
+  character: 'eleven_v3',
+} as const
+
 // Target RMS level for volume normalization (0.0 to 1.0)
 // 0.2 is a comfortable listening level that avoids clipping
 const TARGET_RMS_LEVEL = 0.2
@@ -154,7 +160,7 @@ export async function textToSpeech(
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: options.modelId || TTS_MODELS.passage,
           voice_settings: {
             stability: options.stability ?? 0.5,
             similarity_boost: options.similarityBoost ?? 0.75,
@@ -338,6 +344,7 @@ export async function prefetchCharacterAudio(
   
   const options: TTSOptions = {
     voiceId,
+    modelId: TTS_MODELS.character,
     ...charConfig.defaultSettings,
   }
   
@@ -469,6 +476,7 @@ export async function speakAsCharacter(
   
   const options: TTSOptions = {
     voiceId,
+    modelId: TTS_MODELS.character,
     ...charConfig.defaultSettings,
   }
   

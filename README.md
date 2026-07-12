@@ -92,8 +92,8 @@ src/
 - **Vite** for fast development
 - **Tailwind CSS** for styling
 - **Dexie.js** for IndexedDB storage
-- **AssemblyAI** for speech-to-text
-- **ElevenLabs** for text-to-speech
+- **AssemblyAI** for speech-to-text (Universal-3 Pro with keyterm boosting)
+- **ElevenLabs** for text-to-speech (`eleven_turbo_v2_5` for passages, `eleven_v3` for characters)
 
 ## 🔒 Privacy
 

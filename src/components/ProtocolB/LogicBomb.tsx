@@ -1,39 +1,59 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { Screen } from '../../App'
 import { useApp } from '../../context/AppContext'
-import type { DictationPhase } from '../../types'
+import type { DictationPhase, ComparisonResult } from '../../types'
 import MainframeMessage from '../ui/MainframeMessage'
 import GlitchMessage from '../ui/GlitchMessage'
 import ReadyButton from '../ui/ReadyButton'
 import ProgressIndicator from '../ui/ProgressIndicator'
 import { speak, stopSpeech } from '../../services/textToSpeech'
-import { compareTexts, type ComparisonResult } from '../../services/textComparison'
+import { compareTexts } from '../../services/textComparison'
 
 interface LogicBombProps {
   onNavigate: (screen: Screen) => void
 }
 
 export default function LogicBomb({ onNavigate }: LogicBombProps) {
-  const { state } = useApp()
+  const { state, setDictationProgress } = useApp()
   const dictation = state.currentIntel?.dictation
+  const intelId = state.currentIntel?.id ?? ''
+  const saved = state.dictationProgress
 
   // Split into sentences
   const sentences = dictation?.content
     .split(/(?<=[.!?])\s+/)
     .filter(s => s.trim()) || []
 
+  const totalSentences = sentences.length
+  const resumeFromSaved = saved?.intelId === intelId && saved.currentPhase !== 'complete'
+
   // State
-  const [currentPhase, setCurrentPhase] = useState<DictationPhase>('study')
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [currentPhase, setCurrentPhase] = useState<DictationPhase>(
+    resumeFromSaved ? saved.currentPhase : 'study'
+  )
+  const [currentIndex, setCurrentIndex] = useState(resumeFromSaved ? saved.currentSentenceIndex : 0)
   const [userInput, setUserInput] = useState('')
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
-  const [correctCount, setCorrectCount] = useState(0)
+  const [correctCount, setCorrectCount] = useState(resumeFromSaved ? saved.correctCount : 0)
   const [showGlitch, setShowGlitch] = useState(false)
   const [trapWords, setTrapWords] = useState<string[]>([])
 
   const currentSentence = sentences[currentIndex] || ''
-  const totalSentences = sentences.length
+
+  // Persist progress as the student advances
+  useEffect(() => {
+    if (!intelId || !dictation || totalSentences === 0 || currentPhase === 'complete') return
+
+    void setDictationProgress({
+      intelId,
+      currentPhase,
+      currentSentenceIndex: currentIndex,
+      totalSentences,
+      correctCount,
+      incorrectWords: [],
+    })
+  }, [intelId, dictation, currentPhase, currentIndex, totalSentences, correctCount, setDictationProgress])
 
   // Identify "trap words" (words that might be tricky to spell)
   useEffect(() => {
@@ -97,6 +117,7 @@ export default function LogicBomb({ onNavigate }: LogicBombProps) {
       setComparison(null)
     } else {
       setCurrentPhase('complete')
+      void setDictationProgress(null)
     }
   }
 

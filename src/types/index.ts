@@ -29,7 +29,7 @@ export interface RecitationProgress {
   currentStep: RecitationStep
   currentStanza: number
   totalStanzas: number
-  repsCompleted: number
+  currentRep: number
   repsRequired: number
   sectorsCleared: number
 }
@@ -66,9 +66,16 @@ export interface TranscriptionResult {
 
 export interface TTSOptions {
   voiceId?: string
+  modelId?: string
   speed?: number // 0.5 to 2.0
   stability?: number // 0 to 1
   similarityBoost?: number // 0 to 1
+}
+
+export interface TranscriptionOptions {
+  /** Expected text — used to build keyterms for improved accuracy */
+  expectedText?: string
+  keyterms?: string[]
 }
 
 export interface ComparisonResult {
