@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { Screen } from '../../App'
+import type { EchoScreen } from '../../App'
 import { useApp } from '../../context/AppContext'
 import type { DictationPhase, ComparisonResult } from '../../types'
 import MainframeMessage from '../ui/MainframeMessage'
@@ -10,7 +10,8 @@ import { speak, stopSpeech } from '../../services/textToSpeech'
 import { compareTexts } from '../../services/textComparison'
 
 interface LogicBombProps {
-  onNavigate: (screen: Screen) => void
+  onNavigate: (screen: EchoScreen | 'settings') => void
+  onExit?: () => void
 }
 
 export default function LogicBomb({ onNavigate }: LogicBombProps) {

@@ -1,6 +1,10 @@
 import { createContext, useContext, useReducer, useEffect, ReactNode } from 'react'
 import type { Intel, ApiKeys, RecitationProgress, DictationProgress } from '../types'
 import { storage } from '../services/storage'
+import {
+  DEFAULT_BEDROCK_MODEL,
+  DEFAULT_BEDROCK_REGION,
+} from '../constants/bedrock'
 
 // Environment variable defaults (set in .env file)
 const ENV_API_KEYS: ApiKeys = {
@@ -9,6 +13,13 @@ const ENV_API_KEYS: ApiKeys = {
   elevenLabsVoiceId: null,
   mainframeVoiceId: import.meta.env.VITE_MAINFRAME_VOICE_ID || null,
   drGlitchVoiceId: import.meta.env.VITE_DR_GLITCH_VOICE_ID || null,
+  tutorVoiceId: import.meta.env.VITE_TUTOR_VOICE_ID || null,
+  bedrockAccessKeyId: import.meta.env.VITE_BEDROCK_ACCESS_KEY_ID || null,
+  bedrockSecretAccessKey: import.meta.env.VITE_BEDROCK_SECRET_ACCESS_KEY || null,
+  bedrockSessionToken: import.meta.env.VITE_BEDROCK_SESSION_TOKEN || null,
+  bedrockApiKey: import.meta.env.VITE_BEDROCK_API_KEY || null,
+  bedrockRegion: import.meta.env.VITE_BEDROCK_REGION || DEFAULT_BEDROCK_REGION,
+  bedrockModelId: import.meta.env.VITE_BEDROCK_MODEL_ID || DEFAULT_BEDROCK_MODEL,
 }
 
 interface AppState {
@@ -125,6 +136,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           elevenLabsVoiceId: savedApiKeys?.elevenLabsVoiceId || ENV_API_KEYS.elevenLabsVoiceId,
           mainframeVoiceId: savedApiKeys?.mainframeVoiceId || ENV_API_KEYS.mainframeVoiceId,
           drGlitchVoiceId: savedApiKeys?.drGlitchVoiceId || ENV_API_KEYS.drGlitchVoiceId,
+          tutorVoiceId: savedApiKeys?.tutorVoiceId || ENV_API_KEYS.tutorVoiceId,
+          bedrockAccessKeyId: savedApiKeys?.bedrockAccessKeyId || ENV_API_KEYS.bedrockAccessKeyId,
+          bedrockSecretAccessKey:
+            savedApiKeys?.bedrockSecretAccessKey || ENV_API_KEYS.bedrockSecretAccessKey,
+          bedrockSessionToken:
+            savedApiKeys?.bedrockSessionToken || ENV_API_KEYS.bedrockSessionToken,
+          bedrockApiKey: savedApiKeys?.bedrockApiKey || ENV_API_KEYS.bedrockApiKey,
+          bedrockRegion: savedApiKeys?.bedrockRegion || ENV_API_KEYS.bedrockRegion,
+          bedrockModelId: savedApiKeys?.bedrockModelId || ENV_API_KEYS.bedrockModelId,
         }
 
         // Discard progress that doesn't match current intel

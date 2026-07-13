@@ -44,6 +44,7 @@ export default {
       animation: {
         'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
         'glitch': 'glitch 0.5s ease-in-out infinite',
+        'glitch-once': 'glitch 0.15s ease-in-out 1',
         'scan': 'scan 2s linear infinite',
         'typewriter': 'typewriter 0.05s steps(1) forwards',
         'blink': 'blink 1s step-end infinite',

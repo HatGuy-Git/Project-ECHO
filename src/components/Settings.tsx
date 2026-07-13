@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import type { Screen } from '../App'
 import { useApp } from '../context/AppContext'
 import MainframeMessage from './ui/MainframeMessage'
-import { CHARACTER_VOICES } from '../services/textToSpeech'
+import { CHARACTER_VOICES, TUTOR_VOICE } from '../services/textToSpeech'
+import {
+  DEFAULT_BEDROCK_MODEL,
+  DEFAULT_BEDROCK_REGION,
+} from '../constants/bedrock'
 
 interface SettingsProps {
   onNavigate: (screen: Screen) => void
+  returnTo?: Screen
 }
 
-export default function Settings({ onNavigate }: SettingsProps) {
+export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps) {
   const { state, setApiKeys } = useApp()
   
   const [assemblyAIKey, setAssemblyAIKey] = useState('')
@@ -16,6 +21,13 @@ export default function Settings({ onNavigate }: SettingsProps) {
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState('')
   const [mainframeVoiceId, setMainframeVoiceId] = useState('')
   const [drGlitchVoiceId, setDrGlitchVoiceId] = useState('')
+  const [tutorVoiceId, setTutorVoiceId] = useState('')
+  const [bedrockAccessKeyId, setBedrockAccessKeyId] = useState('')
+  const [bedrockSecretAccessKey, setBedrockSecretAccessKey] = useState('')
+  const [bedrockSessionToken, setBedrockSessionToken] = useState('')
+  const [bedrockApiKey, setBedrockApiKey] = useState('')
+  const [bedrockRegion, setBedrockRegion] = useState(DEFAULT_BEDROCK_REGION)
+  const [bedrockModelId, setBedrockModelId] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
@@ -26,6 +38,13 @@ export default function Settings({ onNavigate }: SettingsProps) {
     setElevenLabsVoiceId(state.apiKeys.elevenLabsVoiceId || '')
     setMainframeVoiceId(state.apiKeys.mainframeVoiceId || '')
     setDrGlitchVoiceId(state.apiKeys.drGlitchVoiceId || '')
+    setTutorVoiceId(state.apiKeys.tutorVoiceId || '')
+    setBedrockAccessKeyId(state.apiKeys.bedrockAccessKeyId || '')
+    setBedrockSecretAccessKey(state.apiKeys.bedrockSecretAccessKey || '')
+    setBedrockSessionToken(state.apiKeys.bedrockSessionToken || '')
+    setBedrockApiKey(state.apiKeys.bedrockApiKey || '')
+    setBedrockRegion(state.apiKeys.bedrockRegion || DEFAULT_BEDROCK_REGION)
+    setBedrockModelId(state.apiKeys.bedrockModelId || '')
   }, [state.apiKeys])
 
   const handleSave = async () => {
@@ -39,6 +58,13 @@ export default function Settings({ onNavigate }: SettingsProps) {
         elevenLabsVoiceId: elevenLabsVoiceId.trim() || null,
         mainframeVoiceId: mainframeVoiceId.trim() || null,
         drGlitchVoiceId: drGlitchVoiceId.trim() || null,
+        tutorVoiceId: tutorVoiceId.trim() || null,
+        bedrockAccessKeyId: bedrockAccessKeyId.trim() || null,
+        bedrockSecretAccessKey: bedrockSecretAccessKey.trim() || null,
+        bedrockSessionToken: bedrockSessionToken.trim() || null,
+        bedrockApiKey: bedrockApiKey.trim() || null,
+        bedrockRegion: bedrockRegion.trim() || DEFAULT_BEDROCK_REGION,
+        bedrockModelId: bedrockModelId.trim() || null,
       })
       setSaveMessage('Settings saved successfully!')
       setTimeout(() => setSaveMessage(null), 3000)
@@ -57,11 +83,11 @@ export default function Settings({ onNavigate }: SettingsProps) {
       {/* Header */}
       <header className="max-w-2xl mx-auto mb-6">
         <button
-          onClick={() => onNavigate('home')}
+          onClick={() => onNavigate(returnTo)}
           className="text-mainframe hover:text-mainframe-light transition-colors mb-4 flex items-center gap-2"
         >
           <span>←</span>
-          <span>Return to Mission Control</span>
+          <span>Back</span>
         </button>
         <h1 className="font-display text-3xl text-mainframe text-glow-mainframe">
           ⚙️ SETTINGS
@@ -189,8 +215,103 @@ export default function Settings({ onNavigate }: SettingsProps) {
             </p>
           </div>
 
+          {/* Tutor Voice (Driver module, read-along) */}
+          <div className="mt-6 p-4 bg-sky-400/5 border border-sky-400/20 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">🚗</span>
+              <h3 className="font-display text-lg text-sky-300">TUTOR Voice</h3>
+            </div>
+            <p className="text-gray-400 text-sm mb-3">
+              Warm, kind read-along narrator for study modules like Tennessee Driver Test prep.
+            </p>
+            <input
+              type="text"
+              value={tutorVoiceId}
+              onChange={(e) => setTutorVoiceId(e.target.value)}
+              placeholder={`Voice ID (default: Matilda — ${TUTOR_VOICE.defaultVoiceId})`}
+              className="input-field font-mono text-sm"
+            />
+          </div>
+
           <p className="text-xs text-gray-500 mt-4">
             💡 Find voice IDs in your ElevenLabs dashboard under Voice Lab. Leave blank to use defaults.
+          </p>
+        </div>
+
+        {/* Amazon Bedrock Settings */}
+        <div className="card border-sky-400/20">
+          <h2 className="font-display text-xl text-sky-300 mb-2 flex items-center gap-2">
+            <span>🧠</span>
+            Amazon Bedrock (Claude — Driver Manual Analysis)
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Standard AWS credentials for Claude on Bedrock: Access Key ID + Secret Access Key.
+            Your IAM user/role also needs permission to invoke the model in your region.
+          </p>
+
+          <input
+            type="text"
+            value={bedrockAccessKeyId}
+            onChange={(e) => setBedrockAccessKeyId(e.target.value)}
+            placeholder="AWS Access Key ID"
+            className="input-field font-mono mb-3"
+            autoComplete="off"
+          />
+
+          <input
+            type="password"
+            value={bedrockSecretAccessKey}
+            onChange={(e) => setBedrockSecretAccessKey(e.target.value)}
+            placeholder="AWS Secret Access Key"
+            className="input-field font-mono mb-3"
+            autoComplete="off"
+          />
+
+          <input
+            type="password"
+            value={bedrockSessionToken}
+            onChange={(e) => setBedrockSessionToken(e.target.value)}
+            placeholder="Session token (optional — only for temporary credentials)"
+            className="input-field font-mono text-sm mb-3"
+            autoComplete="off"
+          />
+
+          <input
+            type="text"
+            value={bedrockRegion}
+            onChange={(e) => setBedrockRegion(e.target.value)}
+            placeholder={`AWS region (default: ${DEFAULT_BEDROCK_REGION})`}
+            className="input-field font-mono text-sm mb-3"
+          />
+
+          <input
+            type="text"
+            value={bedrockModelId}
+            onChange={(e) => setBedrockModelId(e.target.value)}
+            placeholder={`Model ID (default: ${DEFAULT_BEDROCK_MODEL})`}
+            className="input-field font-mono text-sm mb-3"
+          />
+
+          <p className="text-gray-500 text-xs mb-2">
+            Or use a Bedrock API key (Bearer token) instead of IAM credentials:
+          </p>
+          <input
+            type="password"
+            value={bedrockApiKey}
+            onChange={(e) => setBedrockApiKey(e.target.value)}
+            placeholder="Bedrock API key (optional alternative)"
+            className="input-field font-mono text-sm"
+          />
+
+          {(bedrockAccessKeyId && bedrockSecretAccessKey) || bedrockApiKey ? (
+            <p className="text-sm text-success mt-2 flex items-center gap-2">
+              <span>✓</span> Bedrock credentials entered
+            </p>
+          ) : null}
+
+          <p className="text-xs text-gray-500 mt-3">
+            Driver manual AI prep runs through the local dev server (`npm run dev`) so AWS
+            request signing works correctly.
           </p>
         </div>
 
@@ -217,7 +338,7 @@ export default function Settings({ onNavigate }: SettingsProps) {
           
           <div className="flex gap-4">
             <button
-              onClick={() => onNavigate('home')}
+              onClick={() => onNavigate(returnTo)}
               className="btn btn-glitch"
             >
               Cancel
@@ -237,8 +358,8 @@ export default function Settings({ onNavigate }: SettingsProps) {
           <h3 className="font-display text-lg text-gray-300 mb-3">🔒 Security Note</h3>
           <p className="text-gray-400 text-sm leading-relaxed">
             Your API keys are stored locally in your browser's IndexedDB and are never sent 
-            to any server except the official API endpoints (AssemblyAI and ElevenLabs). 
-            They are only used to enable speech features for your training.
+            to any server except the official API endpoints (AssemblyAI, ElevenLabs, and AWS Bedrock). 
+            They are only used to enable speech and study-prep features on your device.
           </p>
         </div>
       </main>

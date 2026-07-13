@@ -22,6 +22,50 @@ export interface ApiKeys {
   elevenLabsVoiceId: string | null // Legacy: general voice ID
   mainframeVoiceId: string | null  // Voice for the Mainframe character
   drGlitchVoiceId: string | null   // Voice for Dr. Glitch villain
+  tutorVoiceId: string | null      // Voice for read-along tutor (driver module, etc.)
+  bedrockAccessKeyId: string | null  // AWS IAM access key for Bedrock
+  bedrockSecretAccessKey: string | null
+  bedrockSessionToken: string | null // Optional, for temporary STS credentials
+  bedrockApiKey: string | null       // Alternative: Bedrock API key (Bearer token)
+  bedrockRegion: string | null       // AWS region, e.g. us-east-1
+  bedrockModelId: string | null      // Optional Claude model / inference profile ID
+}
+
+export interface StudyBlock {
+  type: 'heading' | 'subheading' | 'paragraph' | 'bullet' | 'numbered' | 'law' | 'warning' | 'keyPoint'
+  text: string
+  items?: string[]
+}
+
+export interface StudySection {
+  id: string
+  title: string
+  /** e.g. "Section B · Chapter 3" or "Section B · Ch 4 · Speed Limits" */
+  sectionLabel: string
+  chapterNumber: number
+  /** Parent chapter title from the manual */
+  chapterTitle?: string
+  /** Subsection heading within the chapter, if split */
+  subsectionTitle?: string
+  subsectionIndex?: number
+  /** One-line summary of what the written test covers in this chapter */
+  testFocus: string
+  /** Plain text for narration — derived from structured blocks */
+  content: string
+  blocks: StudyBlock[]
+  order: number
+}
+
+export interface DriverManualData {
+  id: string
+  sourceUrl: string
+  processedAt: Date
+  /** Bumped when curation logic changes — prompts re-prepare if stale */
+  curatorVersion: number
+  /** Whether sections were prepared with Claude on Bedrock */
+  aiCurated?: boolean
+  sections: StudySection[]
+  currentSectionIndex: number
 }
 
 export interface RecitationProgress {

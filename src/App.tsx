@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AppProvider } from './context/AppContext'
-import HomeScreen from './components/HomeScreen'
-import UploadIntel from './components/UploadIntel'
+import ModuleHub from './components/hub/ModuleHub'
+import EchoModule from './components/echo/EchoModule'
+import TNDriverModule from './components/driver/TNDriverModule'
 import Settings from './components/Settings'
-import VoiceLock from './components/ProtocolA/VoiceLock'
-import LogicBomb from './components/ProtocolB/LogicBomb'
 import { initAudioContext } from './services/textToSpeech'
 
-export type Screen = 'home' | 'upload' | 'settings' | 'protocol-a' | 'protocol-b'
+export type Screen = 'hub' | 'settings' | 'echo' | 'tn-driver'
+export type EchoScreen = 'home' | 'upload' | 'protocol-a' | 'protocol-b'
 
 function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('home')
+  const [currentScreen, setCurrentScreen] = useState<Screen>('hub')
+  const [settingsReturn, setSettingsReturn] = useState<Screen>('hub')
   const [audioInitialized, setAudioInitialized] = useState(false)
 
-  // Initialize audio context on first user interaction
   const handleFirstInteraction = useCallback(async () => {
     if (!audioInitialized) {
       await initAudioContext()
@@ -21,35 +21,62 @@ function App() {
     }
   }, [audioInitialized])
 
-  // Add global click listener to initialize audio on first interaction
   useEffect(() => {
     const handler = () => {
       handleFirstInteraction()
     }
-    
+
     document.addEventListener('click', handler, { once: false })
     document.addEventListener('keydown', handler, { once: false })
-    
+
     return () => {
       document.removeEventListener('click', handler)
       document.removeEventListener('keydown', handler)
     }
   }, [handleFirstInteraction])
 
+  const navigateToSettings = (returnTo: Screen) => {
+    setSettingsReturn(returnTo)
+    setCurrentScreen('settings')
+  }
+
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'home':
-        return <HomeScreen onNavigate={setCurrentScreen} />
-      case 'upload':
-        return <UploadIntel onNavigate={setCurrentScreen} />
+      case 'hub':
+        return <ModuleHub onNavigate={setCurrentScreen} />
+      case 'echo':
+        return (
+          <EchoModule
+            onNavigate={(screen) => {
+              if (screen === 'settings') {
+                navigateToSettings('echo')
+              } else {
+                setCurrentScreen(screen)
+              }
+            }}
+          />
+        )
+      case 'tn-driver':
+        return (
+          <TNDriverModule
+            onNavigate={(screen) => {
+              if (screen === 'settings') {
+                navigateToSettings('tn-driver')
+              } else {
+                setCurrentScreen(screen)
+              }
+            }}
+          />
+        )
       case 'settings':
-        return <Settings onNavigate={setCurrentScreen} />
-      case 'protocol-a':
-        return <VoiceLock onNavigate={setCurrentScreen} />
-      case 'protocol-b':
-        return <LogicBomb onNavigate={setCurrentScreen} />
+        return (
+          <Settings
+            onNavigate={(screen) => setCurrentScreen(screen)}
+            returnTo={settingsReturn}
+          />
+        )
       default:
-        return <HomeScreen onNavigate={setCurrentScreen} />
+        return <ModuleHub onNavigate={setCurrentScreen} />
     }
   }
 
@@ -65,5 +92,3 @@ function App() {
 }
 
 export default App
-
-

@@ -1,20 +1,36 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Screen } from '../App'
+import type { EchoScreen } from '../App'
 import { useApp } from '../context/AppContext'
 import MainframeMessage from './ui/MainframeMessage'
 import GlitchMessage from './ui/GlitchMessage'
 import { hasSpokenMessage } from '../services/textToSpeech'
 
 interface HomeScreenProps {
-  onNavigate: (screen: Screen) => void
+  onNavigate: (screen: EchoScreen | 'settings') => void
+  onExit?: () => void
 }
 
-export default function HomeScreen({ onNavigate }: HomeScreenProps) {
+export default function HomeScreen({ onNavigate, onExit }: HomeScreenProps) {
   const { state, hasApiKeys, hasIntel, hasActiveRecitation, hasActiveDictation } = useApp()
   const protocolSectionRef = useRef<HTMLDivElement>(null)
-  
-  const introAlreadyDone = hasSpokenMessage('mainframe:Welcome, Agent.')
-  
+
+  const needsSetup = !hasApiKeys()
+  const canResume = hasIntel()
+  const activeRecitation = hasActiveRecitation()
+  const activeDictation = hasActiveDictation()
+  const hasAnyProgress = activeRecitation || activeDictation
+
+  const mainframeMessage =
+    needsSetup
+      ? "Welcome, Agent. Before we begin your training, we need to establish secure communication channels. Please configure your API keys in Settings."
+      : canResume && hasAnyProgress
+      ? "Welcome back, Agent. Your mission is in progress. Resume where you left off, or select a protocol below."
+      : canResume
+      ? "Welcome back, Agent. Your previous intel is still loaded. Ready to continue training, or shall we upload new intel?"
+      : "Welcome, Agent. I am the Mainframe. Dr. Glitch is attempting to corrupt the world's language systems. Your mission: master the art of precise speech and spelling. Are you ready to begin?"
+
+  const introAlreadyDone = hasSpokenMessage(`mainframe:${mainframeMessage}`)
+
   const [showGlitch, setShowGlitch] = useState(introAlreadyDone)
   const [introComplete, setIntroComplete] = useState(introAlreadyDone)
 
@@ -24,12 +40,6 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
       return () => clearTimeout(timer)
     }
   }, [introComplete, showGlitch])
-
-  const needsSetup = !hasApiKeys()
-  const canResume = hasIntel()
-  const activeRecitation = hasActiveRecitation()
-  const activeDictation = hasActiveDictation()
-  const hasAnyProgress = activeRecitation || activeDictation
 
   const handleResumeTraining = () => {
     // Resume the single in-progress protocol, or scroll to protocol selection
@@ -55,6 +65,17 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   return (
     <div className="min-h-screen p-6 flex flex-col">
+      {onExit && (
+        <div className="max-w-2xl mx-auto w-full mb-4">
+          <button
+            onClick={onExit}
+            className="text-mainframe hover:text-mainframe-light transition-colors flex items-center gap-2 text-sm"
+          >
+            <span>←</span>
+            <span>Back to Modules</span>
+          </button>
+        </div>
+      )}
       <header className="text-center mb-8">
         <h1 className="font-display text-4xl md:text-5xl text-mainframe text-glow-mainframe mb-2">
           PROJECT ECHO
@@ -66,15 +87,7 @@ export default function HomeScreen({ onNavigate }: HomeScreenProps) {
 
       <main className="flex-1 max-w-2xl mx-auto w-full space-y-6">
         <MainframeMessage
-          message={
-            needsSetup
-              ? "Welcome, Agent. Before we begin your training, we need to establish secure communication channels. Please configure your API keys in Settings."
-              : canResume && hasAnyProgress
-              ? "Welcome back, Agent. Your mission is in progress. Resume where you left off, or select a protocol below."
-              : canResume
-              ? "Welcome back, Agent. Your previous intel is still loaded. Ready to continue training, or shall we upload new intel?"
-              : "Welcome, Agent. I am the Mainframe. Dr. Glitch is attempting to corrupt the world's language systems. Your mission: master the art of precise speech and spelling. Are you ready to begin?"
-          }
+          message={mainframeMessage}
           speakOnType={true}
           onComplete={() => setIntroComplete(true)}
         />

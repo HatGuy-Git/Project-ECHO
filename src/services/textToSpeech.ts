@@ -6,6 +6,12 @@
  */
 
 import type { TTSOptions, CharacterType, ApiKeys } from '../types'
+import {
+  buildWordTimingsFromAlignment,
+  buildEstimatedWordTimings,
+  type CharacterAlignment,
+  type WordTiming,
+} from '../utils/wordHighlight'
 
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1'
 
@@ -42,6 +48,16 @@ export const CHARACTER_VOICES = {
   },
 } as const
 
+/** Warm, gentle female narrator for read-along study modules */
+export const TUTOR_VOICE = {
+  defaultVoiceId: 'XrExE9yKIg1WjnnlVkGX', // Matilda — warm, kind, approachable
+  defaultSettings: {
+    stability: 0.78,
+    similarityBoost: 0.82,
+    speed: 0.95,
+  },
+} as const
+
 // Shared AudioContext for Web Audio API operations
 let audioContext: AudioContext | null = null
 let audioContextReady = false
@@ -75,12 +91,39 @@ export function isAudioReady(): boolean {
 
 // Track current audio source for stopping
 let currentSource: AudioBufferSourceNode | null = null
+let currentPlaybackRate = 1
+
+export function setPlaybackRate(rate: number): void {
+  currentPlaybackRate = Math.max(0.5, Math.min(2, rate))
+  if (currentSource) {
+    currentSource.playbackRate.value = currentPlaybackRate
+  }
+}
+
+export function getPlaybackRate(): number {
+  return currentPlaybackRate
+}
+
+/**
+ * Reset per-message session state so narration can replay (e.g. new study section).
+ */
+export function clearMessageSession(messageId: string): void {
+  spokenMessagesThisSession.delete(messageId)
+  prefetchPromises.delete(messageId)
+  playbackPromises.delete(messageId)
+  playbackListeners.delete(messageId)
+  lastPlaybackElapsed.delete(messageId)
+  sequenceStarted.delete(messageId)
+  wordHighlightProgress.delete(messageId)
+}
 
 // Audio queue system to prevent speech interruption
 interface QueuedAudio {
   blob: Blob
   resolve: () => void
   reject: (error: Error) => void
+  onProgress?: (elapsedSeconds: number) => void
+  playbackRate?: number
 }
 
 const audioQueue: QueuedAudio[] = []
@@ -97,7 +140,7 @@ async function processAudioQueue(): Promise<void> {
   while (audioQueue.length > 0) {
     const item = audioQueue.shift()!
     try {
-      await playAudioImmediate(item.blob)
+      await playAudioImmediate(item.blob, item.onProgress, item.playbackRate)
       item.resolve()
     } catch (error) {
       item.reject(error as Error)
@@ -111,6 +154,32 @@ async function processAudioQueue(): Promise<void> {
 // This persists across hot reloads but resets on full page refresh
 const spokenMessagesThisSession = new Set<string>()
 
+type PrefetchResult = {
+  blob: Blob
+  duration: number
+  wordTimings: WordTiming[]
+} | null
+
+// Deduplicate in-flight prefetches and playback across StrictMode remounts / effect re-runs
+const prefetchPromises = new Map<string, Promise<PrefetchResult>>()
+const playbackPromises = new Map<string, Promise<void>>()
+const sequenceStarted = new Set<string>()
+const wordHighlightProgress = new Map<string, number>()
+
+/**
+ * Get the last highlighted word index for a message (for resume across remounts)
+ */
+export function getWordHighlightProgress(messageId: string): number {
+  return wordHighlightProgress.get(messageId) ?? 0
+}
+
+/**
+ * Update highlighted word progress for a message
+ */
+export function setWordHighlightProgress(messageId: string, wordIndex: number): void {
+  wordHighlightProgress.set(messageId, wordIndex)
+}
+
 /**
  * Check if a message has already been spoken this session
  */
@@ -123,6 +192,154 @@ export function hasSpokenMessage(messageId: string): boolean {
  */
 export function markMessageSpoken(messageId: string): void {
   spokenMessagesThisSession.add(messageId)
+}
+
+/**
+ * Prefetch character audio once per message ID (dedupes concurrent requests)
+ */
+export function prefetchCharacterAudioOnce(
+  messageId: string,
+  text: string,
+  character: CharacterType,
+  apiKey: string,
+  apiKeys: ApiKeys
+): Promise<PrefetchResult> {
+  if (hasSpokenMessage(messageId)) {
+    return Promise.resolve(null)
+  }
+
+  const existing = prefetchPromises.get(messageId)
+  if (existing) {
+    return existing
+  }
+
+  const promise = prefetchCharacterAudio(text, character, apiKey, apiKeys).finally(() => {
+    prefetchPromises.delete(messageId)
+  })
+
+  prefetchPromises.set(messageId, promise)
+  return promise
+}
+
+const TUTOR_VOICE_DEFAULT = TUTOR_VOICE.defaultVoiceId
+
+/**
+ * Prefetch narration audio once per message ID with a specific voice
+ */
+export function prefetchNarrationAudioOnce(
+  messageId: string,
+  text: string,
+  apiKey: string,
+  voiceId: string | null,
+  options: TTSOptions = {}
+): Promise<PrefetchResult> {
+  const existing = prefetchPromises.get(messageId)
+  if (existing) {
+    return existing
+  }
+
+  const promise = prefetchAudio(
+    text,
+    apiKey,
+    {
+      voiceId: voiceId || TUTOR_VOICE_DEFAULT,
+      modelId: TTS_MODELS.passage,
+      ...TUTOR_VOICE.defaultSettings,
+      ...options,
+    },
+    true
+  ).finally(() => {
+    prefetchPromises.delete(messageId)
+  })
+
+  prefetchPromises.set(messageId, promise)
+  return promise
+}
+
+/**
+ * Play narration audio (always plays — for study sections that can replay).
+ */
+export async function playNarratedAudio(
+  blob: Blob,
+  onProgress?: (elapsedSeconds: number) => void,
+  playbackRate = getPlaybackRate()
+): Promise<void> {
+  setPlaybackRate(playbackRate)
+  return playAudio(blob, onProgress, playbackRate)
+}
+
+/**
+ * Play character audio once per message ID (dedupes concurrent playback).
+ * Optional onProgress receives elapsed seconds synced to the audio clock.
+ */
+export function playCharacterAudioOnce(
+  messageId: string,
+  blob: Blob,
+  onProgress?: (elapsedSeconds: number) => void
+): Promise<void> {
+  if (hasSpokenMessage(messageId)) {
+    return Promise.resolve()
+  }
+
+  const existing = playbackPromises.get(messageId)
+  if (existing) {
+    if (onProgress) {
+      registerPlaybackListener(messageId, onProgress)
+    }
+    return existing
+  }
+
+  markMessageSpoken(messageId)
+
+  const listeners = new Set<(elapsedSeconds: number) => void>()
+  if (onProgress) {
+    listeners.add(onProgress)
+  }
+
+  playbackListeners.set(messageId, listeners)
+
+  const promise = playAudio(blob, (elapsed) => {
+    lastPlaybackElapsed.set(messageId, elapsed)
+    playbackListeners.get(messageId)?.forEach((listener) => listener(elapsed))
+  }).finally(() => {
+    playbackPromises.delete(messageId)
+    playbackListeners.delete(messageId)
+    lastPlaybackElapsed.delete(messageId)
+  })
+
+  playbackPromises.set(messageId, promise)
+  return promise
+}
+
+const playbackListeners = new Map<string, Set<(elapsedSeconds: number) => void>>()
+const lastPlaybackElapsed = new Map<string, number>()
+
+function registerPlaybackListener(
+  messageId: string,
+  onProgress: (elapsedSeconds: number) => void
+): void {
+  const listeners = playbackListeners.get(messageId)
+  if (listeners) {
+    listeners.add(onProgress)
+    const elapsed = lastPlaybackElapsed.get(messageId)
+    if (elapsed !== undefined) {
+      onProgress(elapsed)
+    }
+  }
+}
+
+/**
+ * Whether a message sequence (prefetch + typing + playback) has already started
+ */
+export function hasMessageSequenceStarted(messageId: string): boolean {
+  return sequenceStarted.has(messageId)
+}
+
+/**
+ * Mark a message sequence as started (prevents duplicate effect runs from restarting)
+ */
+export function markMessageSequenceStarted(messageId: string): void {
+  sequenceStarted.add(messageId)
 }
 
 /**
@@ -183,6 +400,80 @@ export async function textToSpeech(
   }
 }
 
+interface TimestampedTTSResponse {
+  audio_base64: string
+  alignment?: {
+    characters: string[]
+    character_start_times_seconds: number[]
+    character_end_times_seconds: number[]
+  }
+  normalized_alignment?: {
+    characters: string[]
+    character_start_times_seconds: number[]
+    character_end_times_seconds: number[]
+  }
+}
+
+/**
+ * Convert text to speech with character-level timestamps from ElevenLabs
+ */
+export async function textToSpeechWithTimestamps(
+  text: string,
+  apiKey: string,
+  options: TTSOptions = {}
+): Promise<{ blob: Blob; alignment: TimestampedTTSResponse['alignment'] } | null> {
+  const voiceId = options.voiceId || DEFAULT_VOICE_ID
+
+  try {
+    const response = await fetch(
+      `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}/with-timestamps`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'xi-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          text,
+          model_id: options.modelId || TTS_MODELS.passage,
+          voice_settings: {
+            stability: options.stability ?? 0.5,
+            similarity_boost: options.similarityBoost ?? 0.75,
+            speed: options.speed ?? 1.0,
+          },
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('TTS timestamps error:', errorText)
+      return null
+    }
+
+    const data: TimestampedTTSResponse = await response.json()
+    const alignment = data.alignment ?? data.normalized_alignment ?? null
+    if (!alignment || !data.audio_base64) {
+      return null
+    }
+
+    const binary = atob(data.audio_base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+
+    return {
+      blob: new Blob([bytes], { type: 'audio/mpeg' }),
+      alignment,
+    }
+  } catch (error) {
+    console.error('TTS timestamps error:', error)
+    return null
+  }
+}
+
 /**
  * Calculate the RMS (Root Mean Square) level of an audio buffer
  * This gives us the average loudness of the audio
@@ -207,7 +498,11 @@ function calculateRMS(audioBuffer: AudioBuffer): number {
  * Play audio blob immediately (internal use)
  * Uses Web Audio API to analyze and normalize volume levels
  */
-async function playAudioImmediate(audioBlob: Blob): Promise<void> {
+async function playAudioImmediate(
+  audioBlob: Blob,
+  onProgress?: (elapsedSeconds: number) => void,
+  playbackRate = currentPlaybackRate
+): Promise<void> {
   const ctx = getAudioContext()
   
   // Resume context if it was suspended (browser autoplay policy)
@@ -218,50 +513,63 @@ async function playAudioImmediate(audioBlob: Blob): Promise<void> {
       console.log('[AudioContext] Resumed, state:', ctx.state)
     } catch (error) {
       console.error('[AudioContext] Failed to resume:', error)
-      // If we can't resume, try browser TTS as fallback
       throw new Error('AudioContext suspended - needs user interaction')
     }
   }
   
-  // Wait a moment for context to be fully ready
   if (ctx.state !== 'running') {
     console.log('[AudioContext] Waiting for context to be running, current state:', ctx.state)
     await new Promise(resolve => setTimeout(resolve, 100))
   }
   
-  // Decode the audio blob into an AudioBuffer
   const arrayBuffer = await audioBlob.arrayBuffer()
   const audioBuffer = await ctx.decodeAudioData(arrayBuffer)
   
-  // Calculate current RMS and determine gain needed for normalization
   const currentRMS = calculateRMS(audioBuffer)
   const gainValue = currentRMS > 0 ? TARGET_RMS_LEVEL / currentRMS : 1
-  
-  // Clamp gain to prevent distortion (max 3x boost, min 0.1x reduction)
   const clampedGain = Math.max(0.1, Math.min(3.0, gainValue))
+  const duration = audioBuffer.duration
   
   return new Promise((resolve, reject) => {
     try {
-      // Create audio nodes
       const source = ctx.createBufferSource()
       const gainNode = ctx.createGain()
       
       source.buffer = audioBuffer
       gainNode.gain.value = clampedGain
+      source.playbackRate.value = playbackRate
+      currentPlaybackRate = playbackRate
       
-      // Connect: source -> gain -> output
       source.connect(gainNode)
       gainNode.connect(ctx.destination)
       
-      // Track current source for stopping
       currentSource = source
       
+      const startAt = ctx.currentTime
+      let rafId = 0
+
+      const reportProgress = () => {
+        if (!currentSource) return
+        const rate = currentSource.playbackRate.value
+        const elapsed = Math.min((ctx.currentTime - startAt) * rate, duration)
+        onProgress?.(elapsed)
+        if (elapsed < duration) {
+          rafId = requestAnimationFrame(reportProgress)
+        }
+      }
+
       source.onended = () => {
+        cancelAnimationFrame(rafId)
         currentSource = null
+        onProgress?.(duration)
         resolve()
       }
       
       source.start(0)
+      if (onProgress) {
+        onProgress(0)
+        rafId = requestAnimationFrame(reportProgress)
+      }
     } catch (error) {
       reject(error)
     }
@@ -272,9 +580,13 @@ async function playAudioImmediate(audioBlob: Blob): Promise<void> {
  * Play audio blob through the browser with volume normalization
  * Queues audio to prevent interrupting currently playing speech
  */
-export async function playAudio(audioBlob: Blob): Promise<void> {
+export async function playAudio(
+  audioBlob: Blob,
+  onProgress?: (elapsedSeconds: number) => void,
+  playbackRate = currentPlaybackRate
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    audioQueue.push({ blob: audioBlob, resolve, reject })
+    audioQueue.push({ blob: audioBlob, resolve, reject, onProgress, playbackRate })
     processAudioQueue()
   })
 }
@@ -294,36 +606,60 @@ export async function playAudioInterrupt(audioBlob: Blob): Promise<void> {
 }
 
 /**
- * Pre-fetch audio and get its duration
- * Returns the blob and duration so components can sync typing with playback
+ * Pre-fetch audio and get its duration plus word timings when available
  */
 export async function prefetchAudio(
   text: string,
   apiKey: string,
-  options: TTSOptions = {}
-): Promise<{ blob: Blob; duration: number } | null> {
-  const audioBlob = await textToSpeech(text, apiKey, options)
-  
+  options: TTSOptions = {},
+  withTimestamps = false
+): Promise<PrefetchResult> {
+  let audioBlob: Blob | null = null
+  let alignment: CharacterAlignment | null = null
+
+  if (withTimestamps) {
+    const timestamped = await textToSpeechWithTimestamps(text, apiKey, options)
+    if (timestamped) {
+      audioBlob = timestamped.blob
+      alignment = timestamped.alignment as CharacterAlignment | null
+    }
+  }
+
+  if (!audioBlob) {
+    audioBlob = await textToSpeech(text, apiKey, options)
+  }
+
   if (!audioBlob) {
     return null
   }
-  
+
   try {
     const ctx = getAudioContext()
-    // Clone the array buffer so we don't consume the blob
     const arrayBuffer = await audioBlob.arrayBuffer()
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
-    
-    // Create a new blob from the original data for playback
     const newBlob = new Blob([arrayBuffer], { type: audioBlob.type })
-    
+    const duration = audioBuffer.duration
+
+    let wordTimings = alignment
+      ? buildWordTimingsFromAlignment(text, alignment)
+      : []
+
+    if (wordTimings.length === 0) {
+      wordTimings = buildEstimatedWordTimings(text, duration)
+    }
+
     return {
       blob: newBlob,
-      duration: audioBuffer.duration
+      duration,
+      wordTimings,
     }
   } catch (error) {
     console.error('Error getting audio duration:', error)
-    return { blob: audioBlob, duration: 5 } // Fallback duration estimate
+    return {
+      blob: audioBlob,
+      duration: 5,
+      wordTimings: buildEstimatedWordTimings(text, 5),
+    }
   }
 }
 
@@ -335,7 +671,7 @@ export async function prefetchCharacterAudio(
   character: CharacterType,
   apiKey: string,
   apiKeys: ApiKeys
-): Promise<{ blob: Blob; duration: number } | null> {
+): Promise<PrefetchResult> {
   const charConfig = CHARACTER_VOICES[character]
   
   const voiceId = character === 'mainframe'
@@ -348,7 +684,7 @@ export async function prefetchCharacterAudio(
     ...charConfig.defaultSettings,
   }
   
-  return prefetchAudio(text, apiKey, options)
+  return prefetchAudio(text, apiKey, options, true)
 }
 
 /**

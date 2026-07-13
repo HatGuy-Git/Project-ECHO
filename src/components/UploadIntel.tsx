@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import type { Screen } from '../App'
+import type { EchoScreen } from '../App'
 import { useApp } from '../context/AppContext'
 import { storage } from '../services/storage'
 import MainframeMessage from './ui/MainframeMessage'
 import type { Intel, Passage } from '../types'
 
 interface UploadIntelProps {
-  onNavigate: (screen: Screen) => void
+  onNavigate: (screen: EchoScreen | 'settings') => void
+  onExit?: () => void
 }
 
-export default function UploadIntel({ onNavigate }: UploadIntelProps) {
+export default function UploadIntel({ onNavigate, onExit }: UploadIntelProps) {
   const { setIntel } = useApp()
   const [poemText, setPoemText] = useState('')
   const [poemTitle, setPoemTitle] = useState('')
@@ -77,11 +78,11 @@ export default function UploadIntel({ onNavigate }: UploadIntelProps) {
       {/* Header */}
       <header className="max-w-3xl mx-auto mb-6">
         <button
-          onClick={() => onNavigate('home')}
+          onClick={() => (onExit ? onExit() : onNavigate('home'))}
           className="text-mainframe hover:text-mainframe-light transition-colors mb-4 flex items-center gap-2"
         >
           <span>←</span>
-          <span>Return to Mission Control</span>
+          <span>{onExit ? 'Back to Modules' : 'Return to Mission Control'}</span>
         </button>
         <h1 className="font-display text-3xl text-mainframe text-glow-mainframe">
           UPLOAD NEW INTEL

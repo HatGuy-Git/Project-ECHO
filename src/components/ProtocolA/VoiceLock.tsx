@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { Screen } from '../../App'
+import type { EchoScreen } from '../../App'
 import { useApp } from '../../context/AppContext'
 import type { RecitationStep } from '../../types'
 import MainframeMessage from '../ui/MainframeMessage'
@@ -13,7 +13,8 @@ import { compareTexts } from '../../services/textComparison'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 
 interface VoiceLockProps {
-  onNavigate: (screen: Screen) => void
+  onNavigate: (screen: EchoScreen | 'settings') => void
+  onExit?: () => void
 }
 
 const REPS_REQUIRED = 3

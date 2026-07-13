@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Intel, ApiKeys, Passage, RecitationProgress, DictationProgress } from '../types'
+import type { Intel, ApiKeys, Passage, RecitationProgress, DictationProgress, DriverManualData } from '../types'
 
 // Define the database schema
 interface PassageRecord {
@@ -43,6 +43,13 @@ const API_KEY_SETTINGS = [
   'elevenLabsVoiceId',
   'mainframeVoiceId',
   'drGlitchVoiceId',
+  'tutorVoiceId',
+  'bedrockAccessKeyId',
+  'bedrockSecretAccessKey',
+  'bedrockSessionToken',
+  'bedrockApiKey',
+  'bedrockRegion',
+  'bedrockModelId',
 ] as const
 
 // Storage service
@@ -135,7 +142,42 @@ export const storage = {
       elevenLabsVoiceId: records[2]?.value || null,
       mainframeVoiceId: records[3]?.value || null,
       drGlitchVoiceId: records[4]?.value || null,
+      tutorVoiceId: records[5]?.value || null,
+      bedrockAccessKeyId: records[6]?.value || null,
+      bedrockSecretAccessKey: records[7]?.value || null,
+      bedrockSessionToken: records[8]?.value || null,
+      bedrockApiKey: records[9]?.value || null,
+      bedrockRegion: records[10]?.value || null,
+      bedrockModelId: records[11]?.value || null,
     }
+  },
+
+  async saveDriverManual(manual: DriverManualData): Promise<void> {
+    await db.settings.put({
+      key: 'driverManual',
+      value: JSON.stringify({
+        ...manual,
+        processedAt: manual.processedAt.toISOString(),
+      }),
+    })
+  },
+
+  async getDriverManual(): Promise<DriverManualData | null> {
+    const record = await db.settings.get('driverManual')
+    if (!record?.value) return null
+    try {
+      const parsed = JSON.parse(record.value) as DriverManualData & { processedAt: string }
+      return {
+        ...parsed,
+        processedAt: new Date(parsed.processedAt),
+      }
+    } catch {
+      return null
+    }
+  },
+
+  async clearDriverManual(): Promise<void> {
+    await db.settings.put({ key: 'driverManual', value: '' })
   },
 
   // Training progress
