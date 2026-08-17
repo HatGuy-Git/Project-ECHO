@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Intel, ApiKeys, Passage, RecitationProgress, DictationProgress, DriverManualData } from '../types'
+import type { Intel, ApiKeys, Passage, RecitationProgress, DictationProgress, DriverManualData, ReadingDocument } from '../types'
 
 // Define the database schema
 interface PassageRecord {
@@ -178,6 +178,34 @@ export const storage = {
 
   async clearDriverManual(): Promise<void> {
     await db.settings.put({ key: 'driverManual', value: '' })
+  },
+
+  async saveReadingDocument(document: ReadingDocument): Promise<void> {
+    await db.settings.put({
+      key: 'readingDocument',
+      value: JSON.stringify({
+        ...document,
+        processedAt: document.processedAt.toISOString(),
+      }),
+    })
+  },
+
+  async getReadingDocument(): Promise<ReadingDocument | null> {
+    const record = await db.settings.get('readingDocument')
+    if (!record?.value) return null
+    try {
+      const parsed = JSON.parse(record.value) as ReadingDocument & { processedAt: string }
+      return {
+        ...parsed,
+        processedAt: new Date(parsed.processedAt),
+      }
+    } catch {
+      return null
+    }
+  },
+
+  async clearReadingDocument(): Promise<void> {
+    await db.settings.put({ key: 'readingDocument', value: '' })
   },
 
   // Training progress

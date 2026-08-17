@@ -42,6 +42,20 @@ export default function ModuleHub({ onNavigate }: ModuleHubProps) {
           </button>
 
           <button
+            onClick={() => onNavigate('reading')}
+            className="card text-left p-6 hover:border-amber-400/50 transition-colors group"
+          >
+            <span className="text-4xl mb-3 block">📖</span>
+            <h2 className="font-display text-xl text-amber-300 mb-2 group-hover:text-amber-200">
+              Assisted Reading
+            </h2>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Upload any PDF and follow along as it is read aloud. Words highlight in
+              time with the narrator so new words become familiar by sight.
+            </p>
+          </button>
+
+          <button
             onClick={() => onNavigate('echo')}
             className="card text-left p-6 hover:border-mainframe/50 transition-colors group"
           >

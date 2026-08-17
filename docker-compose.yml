@@ -1,0 +1,24 @@
+# Dev stack — same pattern as Continuum:
+#   1. Put only AWS credentials in .env (or docker-compose.dev.env)
+#   2. docker compose up --build
+#   3. The container uses those credentials to read ace-mode/config from Secrets Manager
+#
+#   docker compose --env-file docker-compose.dev.env up --build
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${ACE_MODE_HOST_PORT:-5173}:5173"
+    env_file:
+      - .env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_SECRET_NAME=${AWS_SECRET_NAME:-ace-mode/config}
+      - WATCHFILES_FORCE_POLLING=true
+    volumes:
+      - .:/app
+      - /app/node_modules

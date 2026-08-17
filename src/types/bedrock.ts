@@ -13,5 +13,5 @@ export interface BedrockConverseRequest {
   system: string
   user: string
   maxTokens?: number
-  auth: BedrockAuth
+  auth?: BedrockAuth
 }

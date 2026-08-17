@@ -27,5 +27,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+docker-compose.dev.env
+docker-compose.dev.env
 
 

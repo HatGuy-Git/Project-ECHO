@@ -7,7 +7,7 @@ import type { BedrockAuth } from '../types/bedrock'
 export type { BedrockAuth }
 
 export interface BedrockLlmConfig {
-  auth: BedrockAuth
+  auth?: BedrockAuth
   region: string
   modelId: string
 }
@@ -34,7 +34,7 @@ export async function chatJson<T>(options: ChatJsonOptions): Promise<T> {
       system: options.system,
       user: options.user,
       maxTokens: options.maxTokens,
-      auth: options.bedrock.auth,
+      ...(options.bedrock.auth ? { auth: options.bedrock.auth } : {}),
     }),
   })
 
@@ -110,5 +110,27 @@ export function resolveBedrockFromApiKeys(keys: {
     }
   }
 
-  return null
+  return { region, modelId }
+}
+
+/** IAM credentials only — Textract cannot use a Bedrock API key. */
+export function resolveIamFromApiKeys(keys: {
+  bedrockAccessKeyId: string | null
+  bedrockSecretAccessKey: string | null
+  bedrockSessionToken: string | null
+  bedrockRegion: string | null
+}): { region: string; auth: Extract<BedrockAuth, { type: 'iam' }> } | null {
+  const accessKeyId = keys.bedrockAccessKeyId?.trim()
+  const secretAccessKey = keys.bedrockSecretAccessKey?.trim()
+  if (!accessKeyId || !secretAccessKey) return null
+
+  return {
+    region: keys.bedrockRegion?.trim() || DEFAULT_BEDROCK_REGION,
+    auth: {
+      type: 'iam',
+      accessKeyId,
+      secretAccessKey,
+      sessionToken: keys.bedrockSessionToken?.trim() || undefined,
+    },
+  }
 }

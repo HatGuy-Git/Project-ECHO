@@ -7,24 +7,32 @@ import {
   DEFAULT_BEDROCK_REGION,
 } from '../src/constants/bedrock'
 import type { BedrockConverseRequest } from '../src/types/bedrock'
+import { getAppSecrets, getAwsRegion } from './awsSecrets'
 
 export async function invokeBedrockConverse(
   request: BedrockConverseRequest
 ): Promise<string> {
-  const region = request.region?.trim() || DEFAULT_BEDROCK_REGION
-  const modelId = request.modelId?.trim() || DEFAULT_BEDROCK_MODEL
+  const region = request.region?.trim() || getAwsRegion() || DEFAULT_BEDROCK_REGION
+  const modelId =
+    request.modelId?.trim() ||
+    getAppSecrets().BEDROCK_MODEL_ID ||
+    DEFAULT_BEDROCK_MODEL
 
-  if (request.auth.type === 'apiKey') {
+  if (request.auth?.type === 'apiKey') {
     return invokeWithApiKey(request, region, modelId)
   }
 
   const client = new BedrockRuntimeClient({
     region,
-    credentials: {
-      accessKeyId: request.auth.accessKeyId,
-      secretAccessKey: request.auth.secretAccessKey,
-      sessionToken: request.auth.sessionToken,
-    },
+    ...(request.auth?.type === 'iam'
+      ? {
+          credentials: {
+            accessKeyId: request.auth.accessKeyId,
+            secretAccessKey: request.auth.secretAccessKey,
+            sessionToken: request.auth.sessionToken,
+          },
+        }
+      : {}),
   })
 
   const response = await client.send(
@@ -66,7 +74,7 @@ async function invokeWithApiKey(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${request.auth.apiKey}`,
+      Authorization: `Bearer ${request.auth?.type === 'apiKey' ? request.auth.apiKey : ''}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

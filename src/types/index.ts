@@ -68,6 +68,27 @@ export interface DriverManualData {
   currentSectionIndex: number
 }
 
+export interface ReadingChunk {
+  id: string
+  title: string
+  content: string
+  pageStart: number
+  pageEnd: number
+  usedOcr: boolean
+  order: number
+}
+
+export interface ReadingDocument {
+  id: string
+  title: string
+  sourceName: string
+  processedAt: Date
+  chunks: ReadingChunk[]
+  currentChunkIndex: number
+  voiceId: string | null
+  usedOcr: boolean
+}
+
 export interface RecitationProgress {
   intelId: string
   currentStep: RecitationStep

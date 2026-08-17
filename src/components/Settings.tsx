@@ -7,6 +7,7 @@ import {
   DEFAULT_BEDROCK_MODEL,
   DEFAULT_BEDROCK_REGION,
 } from '../constants/bedrock'
+import { fetchRuntimeConfig, type RuntimeConfig } from '../types/runtimeConfig'
 
 interface SettingsProps {
   onNavigate: (screen: Screen) => void
@@ -30,6 +31,7 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
   const [bedrockModelId, setBedrockModelId] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [runtime, setRuntime] = useState<RuntimeConfig | null>(null)
 
   // Load existing keys
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
     setBedrockApiKey(state.apiKeys.bedrockApiKey || '')
     setBedrockRegion(state.apiKeys.bedrockRegion || DEFAULT_BEDROCK_REGION)
     setBedrockModelId(state.apiKeys.bedrockModelId || '')
+    fetchRuntimeConfig().then(setRuntime)
   }, [state.apiKeys])
 
   const handleSave = async () => {
@@ -96,9 +99,36 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
 
       <main className="max-w-2xl mx-auto space-y-6">
         <MainframeMessage
-          message="Configure your secure communication channels below. These API keys enable voice recognition and text-to-speech capabilities for your training."
+          message="Ace Mode uses the same AWS pattern as Continuum: only AWS credentials live on this machine. ElevenLabs and other keys are loaded from Secrets Manager."
           showTyping={false}
         />
+
+        <div className="card border-sky-400/20">
+          <h2 className="font-display text-xl text-sky-300 mb-2">AWS runtime</h2>
+          <p className="text-gray-400 text-sm mb-3">
+            Docker / <code>npm run dev</code> reads <code>AWS_ACCESS_KEY_ID</code> and{' '}
+            <code>AWS_SECRET_ACCESS_KEY</code> from the environment, then loads{' '}
+            <code>{runtime?.aws.secretName ?? 'ace-mode/config'}</code>.
+          </p>
+          <ul className="text-sm space-y-1 text-gray-300">
+            <li>
+              {runtime?.aws.hasEnvCredentials ? '✓' : '○'} AWS credentials in environment
+            </li>
+            <li>
+              {runtime?.aws.secretsLoaded ? '✓' : '○'} Secrets Manager loaded
+              {runtime?.aws.secretKeys?.length
+                ? ` (${runtime.aws.secretKeys.join(', ')})`
+                : ''}
+            </li>
+            <li>{runtime?.services.elevenLabs ? '✓' : '○'} ElevenLabs</li>
+            <li>{runtime?.services.textract ? '✓' : '○'} Textract</li>
+            <li>{runtime?.services.bedrock ? '✓' : '○'} Bedrock</li>
+            <li>{runtime?.services.assemblyAI ? '✓' : '○'} AssemblyAI</li>
+          </ul>
+          {runtime?.aws.error && (
+            <p className="text-sm text-danger mt-3">{runtime.aws.error}</p>
+          )}
+        </div>
 
         {/* AssemblyAI Settings */}
         <div className="card">
@@ -140,14 +170,15 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
             ElevenLabs (Text-to-Speech)
           </h2>
           <p className="text-gray-400 text-sm mb-4">
-            Powers character voices for immersive training.
+            Prefer storing <code>ELEVENLABS_API_KEY</code> in AWS Secrets Manager
+            (<code>ace-mode/config</code>). This box is only an optional local override.
             <a 
-              href="https://elevenlabs.io/" 
+              href="https://elevenlabs.io/app/settings/api-keys" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-mainframe hover:text-mainframe-light ml-1"
             >
-              Get your API key →
+              Create / copy key →
             </a>
           </p>
           
@@ -155,13 +186,22 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
             type="password"
             value={elevenLabsKey}
             onChange={(e) => setElevenLabsKey(e.target.value)}
-            placeholder="Enter your ElevenLabs API key"
+            placeholder="sk_… (secret key, shown only when created)"
             className="input-field font-mono mb-3"
+            autoComplete="off"
           />
+
+          {elevenLabsKey && !elevenLabsKey.trim().startsWith('sk_') && (
+            <p className="text-sm text-danger mt-2">
+              That looks like a Key ID, not the secret key. In ElevenLabs → API Keys,
+              create or rotate a key and copy the value that starts with <code>sk_</code>.
+              The Key ID in the table will not work.
+            </p>
+          )}
           
-          {elevenLabsKey && (
+          {elevenLabsKey && elevenLabsKey.trim().startsWith('sk_') && (
             <p className="text-sm text-success mt-2 flex items-center gap-2">
-              <span>✓</span> Key entered
+              <span>✓</span> Secret key entered — click Save Settings at the bottom
             </p>
           )}
         </div>
@@ -222,7 +262,7 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
               <h3 className="font-display text-lg text-sky-300">TUTOR Voice</h3>
             </div>
             <p className="text-gray-400 text-sm mb-3">
-              Warm, kind read-along narrator for study modules like Tennessee Driver Test prep.
+              Warm, kind read-along narrator for Assisted Reading and Tennessee Driver Test prep.
             </p>
             <input
               type="text"
@@ -242,11 +282,13 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
         <div className="card border-sky-400/20">
           <h2 className="font-display text-xl text-sky-300 mb-2 flex items-center gap-2">
             <span>🧠</span>
-            Amazon Bedrock (Claude — Driver Manual Analysis)
+            Amazon Web Services (Bedrock + Textract)
           </h2>
           <p className="text-gray-400 text-sm mb-4">
-            Standard AWS credentials for Claude on Bedrock: Access Key ID + Secret Access Key.
-            Your IAM user/role also needs permission to invoke the model in your region.
+            IAM Access Key ID + Secret Access Key. These credentials power Claude on
+            Bedrock and <strong>AWS Textract</strong> OCR for Assisted Reading.
+            The IAM user needs <code>textract:DetectDocumentText</code> and Bedrock
+            invoke permission in your region.
           </p>
 
           <input
@@ -293,7 +335,8 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
           />
 
           <p className="text-gray-500 text-xs mb-2">
-            Or use a Bedrock API key (Bearer token) instead of IAM credentials:
+            Or use a Bedrock API key (Bearer token) for Claude only — Textract still
+            needs IAM Access Key + Secret:
           </p>
           <input
             type="password"
@@ -305,12 +348,12 @@ export default function Settings({ onNavigate, returnTo = 'hub' }: SettingsProps
 
           {(bedrockAccessKeyId && bedrockSecretAccessKey) || bedrockApiKey ? (
             <p className="text-sm text-success mt-2 flex items-center gap-2">
-              <span>✓</span> Bedrock credentials entered
+              <span>✓</span> AWS credentials entered
             </p>
           ) : null}
 
           <p className="text-xs text-gray-500 mt-3">
-            Driver manual AI prep runs through the local dev server (`npm run dev`) so AWS
+            Bedrock and Textract run through the local dev server (`npm run dev`) so AWS
             request signing works correctly.
           </p>
         </div>

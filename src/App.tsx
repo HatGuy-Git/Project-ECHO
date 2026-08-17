@@ -3,10 +3,11 @@ import { AppProvider } from './context/AppContext'
 import ModuleHub from './components/hub/ModuleHub'
 import EchoModule from './components/echo/EchoModule'
 import TNDriverModule from './components/driver/TNDriverModule'
+import ReadingModule from './components/reading/ReadingModule'
 import Settings from './components/Settings'
 import { initAudioContext } from './services/textToSpeech'
 
-export type Screen = 'hub' | 'settings' | 'echo' | 'tn-driver'
+export type Screen = 'hub' | 'settings' | 'echo' | 'tn-driver' | 'reading'
 export type EchoScreen = 'home' | 'upload' | 'protocol-a' | 'protocol-b'
 
 function App() {
@@ -62,6 +63,18 @@ function App() {
             onNavigate={(screen) => {
               if (screen === 'settings') {
                 navigateToSettings('tn-driver')
+              } else {
+                setCurrentScreen(screen)
+              }
+            }}
+          />
+        )
+      case 'reading':
+        return (
+          <ReadingModule
+            onNavigate={(screen) => {
+              if (screen === 'settings') {
+                navigateToSettings('reading')
               } else {
                 setCurrentScreen(screen)
               }

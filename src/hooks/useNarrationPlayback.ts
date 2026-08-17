@@ -70,13 +70,7 @@ export function useNarrationPlayback({
     setWordTimings([])
     setIsPlaying(false)
 
-    if (!elevenLabsApiKey) {
-      setIsLoading(false)
-      setError('Add an ElevenLabs API key in Settings to hear narration.')
-      return
-    }
-
-    prefetchNarrationAudioOnce(messageId, speechText, elevenLabsApiKey, voiceId)
+    prefetchNarrationAudioOnce(messageId, speechText, elevenLabsApiKey ?? '', voiceId)
       .then((result) => {
         if (cancelled) return
 
@@ -100,10 +94,20 @@ export function useNarrationPlayback({
         }
         setIsLoading(false)
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!cancelled) {
+          const estimated = buildEstimatedWordTimings(
+            speechText,
+            Math.max(wordCount * 0.35, 3)
+          )
+          setWordTimings(estimated)
+          setDuration(estimated[estimated.length - 1]?.endTime ?? 0)
           setIsLoading(false)
-          setError('Failed to prepare narration.')
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Failed to prepare narration.'
+          )
         }
       })
 

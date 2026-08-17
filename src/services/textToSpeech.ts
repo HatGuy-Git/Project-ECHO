@@ -18,9 +18,9 @@ const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1'
 // Default voice ID (Rachel - clear, professional female voice)
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'
 
-/** Turbo for clear passage reading; v3 for expressive character dialogue */
+/** Flash for clear passage reading; v3 for expressive character dialogue */
 export const TTS_MODELS = {
-  passage: 'eleven_turbo_v2_5',
+  passage: 'eleven_flash_v2_5',
   character: 'eleven_v3',
 } as const
 
@@ -349,7 +349,7 @@ export function clearSpokenMessages(): void {
   spokenMessagesThisSession.clear()
 }
 
-interface ElevenLabsVoice {
+export interface ElevenLabsVoice {
   voice_id: string
   name: string
   category: string
@@ -358,46 +358,204 @@ interface ElevenLabsVoice {
 /**
  * Convert text to speech using ElevenLabs
  */
+function sanitizeSpeechText(text: string): string {
+  return text
+    .replace(/\u0000/g, '')
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+function parseElevenLabsError(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      detail?: { message?: string; status?: string } | string
+    }
+    const detail = parsed.detail
+    if (typeof detail === 'string' && detail.trim()) return detail
+    if (detail && typeof detail === 'object') {
+      if (detail.message) return detail.message
+      if (detail.status) return `ElevenLabs: ${detail.status}`
+    }
+  } catch {
+    // Use status-based fallback
+  }
+
+  if (status === 401) return 'ElevenLabs rejected the API key. Save it again in Settings.'
+  if (status === 402) return 'ElevenLabs quota exceeded. Check your plan or usage.'
+  if (status === 404) return 'That ElevenLabs voice was not found on this account. Pick another voice.'
+  return `ElevenLabs request failed (${status}).`
+}
+
+function buildVoiceSettings(options: TTSOptions) {
+  return {
+    stability: options.stability ?? 0.5,
+    similarity_boost: options.similarityBoost ?? 0.75,
+  }
+}
+
+async function requestTextToSpeech(
+  text: string,
+  apiKey: string,
+  options: TTSOptions = {}
+): Promise<{ blob: Blob | null; error: string | null }> {
+  const voiceId = options.voiceId || DEFAULT_VOICE_ID
+  const speechText = sanitizeSpeechText(text)
+  if (!speechText) {
+    return { blob: null, error: 'Nothing to narrate in this section.' }
+  }
+
+  try {
+    const proxy = await fetch('/api/elevenlabs/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: speechText,
+        voiceId,
+        modelId: options.modelId || TTS_MODELS.passage,
+        voiceSettings: buildVoiceSettings(options),
+      }),
+    })
+
+    if (proxy.ok) {
+      return { blob: await proxy.blob(), error: null }
+    }
+
+    if (apiKey?.startsWith('sk_')) {
+      const response = await fetch(
+        `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}`,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            text: speechText,
+            model_id: options.modelId || TTS_MODELS.passage,
+            voice_settings: buildVoiceSettings(options),
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = parseElevenLabsError(response.status, await response.text())
+        return { blob: null, error }
+      }
+      return { blob: await response.blob(), error: null }
+    }
+
+    const data = (await proxy.json().catch(() => ({}))) as { error?: string; status?: number }
+    return {
+      blob: null,
+      error: data.error
+        ? parseElevenLabsError(data.status ?? proxy.status, data.error)
+        : parseElevenLabsError(proxy.status, ''),
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error talking to ElevenLabs.'
+    console.error('TTS error:', error)
+    return { blob: null, error: message }
+  }
+}
+
+async function requestTextToSpeechWithTimestamps(
+  text: string,
+  apiKey: string,
+  options: TTSOptions = {}
+): Promise<{
+  blob: Blob | null
+  alignment: TimestampedTTSResponse['alignment'] | null
+  error: string | null
+}> {
+  const voiceId = options.voiceId || DEFAULT_VOICE_ID
+  const speechText = sanitizeSpeechText(text)
+  if (!speechText) {
+    return { blob: null, alignment: null, error: 'Nothing to narrate in this section.' }
+  }
+
+  try {
+    const proxy = await fetch('/api/elevenlabs/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: speechText,
+        voiceId,
+        modelId: options.modelId || TTS_MODELS.passage,
+        withTimestamps: true,
+        voiceSettings: buildVoiceSettings(options),
+      }),
+    })
+
+    let data: TimestampedTTSResponse | null = null
+    if (proxy.ok) {
+      data = (await proxy.json()) as TimestampedTTSResponse
+    } else if (apiKey?.startsWith('sk_')) {
+      const response = await fetch(
+        `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}/with-timestamps`,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'xi-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            text: speechText,
+            model_id: options.modelId || TTS_MODELS.passage,
+            voice_settings: buildVoiceSettings(options),
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = parseElevenLabsError(response.status, await response.text())
+        return { blob: null, alignment: null, error }
+      }
+      data = (await response.json()) as TimestampedTTSResponse
+    } else {
+      const errBody = (await proxy.json().catch(() => ({}))) as { error?: string; status?: number }
+      return {
+        blob: null,
+        alignment: null,
+        error: errBody.error
+          ? parseElevenLabsError(errBody.status ?? proxy.status, errBody.error)
+          : parseElevenLabsError(proxy.status, ''),
+      }
+    }
+    const alignment = data.alignment ?? data.normalized_alignment ?? null
+    if (!alignment || !data.audio_base64) {
+      return { blob: null, alignment: null, error: 'ElevenLabs returned audio without timing data.' }
+    }
+
+    const binary = atob(data.audio_base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+
+    return {
+      blob: new Blob([bytes], { type: 'audio/mpeg' }),
+      alignment,
+      error: null,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error talking to ElevenLabs.'
+    console.error('TTS timestamps error:', error)
+    return { blob: null, alignment: null, error: message }
+  }
+}
+
 export async function textToSpeech(
   text: string,
   apiKey: string,
   options: TTSOptions = {}
 ): Promise<Blob | null> {
-  const voiceId = options.voiceId || DEFAULT_VOICE_ID
-  
-  try {
-    const response = await fetch(
-      `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}`,
-      {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          text,
-          model_id: options.modelId || TTS_MODELS.passage,
-          voice_settings: {
-            stability: options.stability ?? 0.5,
-            similarity_boost: options.similarityBoost ?? 0.75,
-            speed: options.speed ?? 1.0,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('TTS Error:', errorText)
-      throw new Error(`TTS failed: ${response.status}`)
-    }
-
-    return await response.blob()
-  } catch (error) {
-    console.error('TTS error:', error)
-    return null
-  }
+  const result = await requestTextToSpeech(text, apiKey, options)
+  return result.blob
 }
 
 interface TimestampedTTSResponse {
@@ -422,56 +580,10 @@ export async function textToSpeechWithTimestamps(
   apiKey: string,
   options: TTSOptions = {}
 ): Promise<{ blob: Blob; alignment: TimestampedTTSResponse['alignment'] } | null> {
-  const voiceId = options.voiceId || DEFAULT_VOICE_ID
-
-  try {
-    const response = await fetch(
-      `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}/with-timestamps`,
-      {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          text,
-          model_id: options.modelId || TTS_MODELS.passage,
-          voice_settings: {
-            stability: options.stability ?? 0.5,
-            similarity_boost: options.similarityBoost ?? 0.75,
-            speed: options.speed ?? 1.0,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('TTS timestamps error:', errorText)
-      return null
-    }
-
-    const data: TimestampedTTSResponse = await response.json()
-    const alignment = data.alignment ?? data.normalized_alignment ?? null
-    if (!alignment || !data.audio_base64) {
-      return null
-    }
-
-    const binary = atob(data.audio_base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i)
-    }
-
-    return {
-      blob: new Blob([bytes], { type: 'audio/mpeg' }),
-      alignment,
-    }
-  } catch (error) {
-    console.error('TTS timestamps error:', error)
-    return null
-  }
+  const result = await requestTextToSpeechWithTimestamps(text, apiKey, options)
+  return result.blob && result.alignment
+    ? { blob: result.blob, alignment: result.alignment }
+    : null
 }
 
 /**
@@ -616,21 +728,42 @@ export async function prefetchAudio(
 ): Promise<PrefetchResult> {
   let audioBlob: Blob | null = null
   let alignment: CharacterAlignment | null = null
+  let lastError: string | null = null
 
-  if (withTimestamps) {
-    const timestamped = await textToSpeechWithTimestamps(text, apiKey, options)
-    if (timestamped) {
-      audioBlob = timestamped.blob
-      alignment = timestamped.alignment as CharacterAlignment | null
+  const attempts: TTSOptions[] = [
+    options,
+    { ...options, voiceId: options.voiceId || TUTOR_VOICE_DEFAULT, modelId: TTS_MODELS.passage },
+    { ...options, voiceId: DEFAULT_VOICE_ID, modelId: TTS_MODELS.passage },
+  ]
+
+  const seen = new Set<string>()
+  for (const attempt of attempts) {
+    const key = `${attempt.voiceId ?? ''}:${attempt.modelId ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    if (withTimestamps) {
+      const timestamped = await requestTextToSpeechWithTimestamps(text, apiKey, attempt)
+      if (timestamped.blob) {
+        audioBlob = timestamped.blob
+        alignment = timestamped.alignment as CharacterAlignment | null
+        lastError = null
+        break
+      }
+      lastError = timestamped.error
     }
+
+    const plain = await requestTextToSpeech(text, apiKey, attempt)
+    if (plain.blob) {
+      audioBlob = plain.blob
+      lastError = null
+      break
+    }
+    lastError = plain.error
   }
 
   if (!audioBlob) {
-    audioBlob = await textToSpeech(text, apiKey, options)
-  }
-
-  if (!audioBlob) {
-    return null
+    throw new Error(lastError || 'Narration unavailable — ElevenLabs did not return audio.')
   }
 
   try {
@@ -684,7 +817,11 @@ export async function prefetchCharacterAudio(
     ...charConfig.defaultSettings,
   }
   
-  return prefetchAudio(text, apiKey, options, true)
+  try {
+    return await prefetchAudio(text, apiKey, options, true)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -759,6 +896,14 @@ export function stopSpeech(): void {
  */
 export async function getAvailableVoices(apiKey: string): Promise<ElevenLabsVoice[]> {
   try {
+    const proxy = await fetch('/api/elevenlabs/voices')
+    if (proxy.ok) {
+      const data = (await proxy.json()) as { voices?: ElevenLabsVoice[] }
+      return data.voices || []
+    }
+
+    if (!apiKey?.startsWith('sk_')) return []
+
     const response = await fetch(`${ELEVENLABS_API_URL}/voices`, {
       headers: {
         'xi-api-key': apiKey,
