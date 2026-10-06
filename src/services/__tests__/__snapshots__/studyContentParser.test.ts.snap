@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseChapterIntoBlocks > produces the same driver blocks as before the generic splitter refactor 1`] = `
+[
+  {
+    "text": "Traffic Signals",
+    "type": "subheading",
+  },
+  {
+    "text": "A steady red light means stop. You must come to a complete stop at the marked stop line. You may turn right on red after stopping, unless a sign prohibits it.",
+    "type": "paragraph",
+  },
+  {
+    "items": [
+      "Yield to pedestrians in the crosswalk",
+      "Yield to vehicles already in the intersection",
+      "Check mirrors",
+      "Signal early",
+    ],
+    "text": "",
+    "type": "bullet",
+  },
+  {
+    "items": [
+      "Stop at the line.",
+      "Look left, right, then left again.",
+    ],
+    "text": "",
+    "type": "numbered",
+  },
+  {
+    "text": "Tennessee law requires all passengers to wear seat belts.",
+    "type": "law",
+  },
+  {
+    "text": "DO NOT pass a stopped school bus with its red lights flashing.",
+    "type": "warning",
+  },
+  {
+    "text": "Remember to signal at least 50 feet before turning.",
+    "type": "keyPoint",
+  },
+  {
+    "text": "Applicants must answer 24 correct out of 30 questions.",
+    "type": "keyPoint",
+  },
+  {
+    "text": "Speed Limits",
+    "type": "subheading",
+  },
+  {
+    "text": "Drive at a speed that is safe for conditions. Even if the posted limit is higher.",
+    "type": "paragraph",
+  },
+]
+`;
