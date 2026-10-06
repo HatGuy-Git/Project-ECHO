@@ -4,6 +4,7 @@ import { storage } from './storage'
 import {
   cleanOcrText,
   joinPageTexts,
+  reattachDropCaps,
   stitchPages,
   stripHeadersAndFooters,
 } from './ocrCleanup'
@@ -160,14 +161,39 @@ function splitBySentence(text: string, maxChars: number): string[] {
   return parts
 }
 
-function cleanPageText(text: string): string {
-  return text
+const BULLET_START = /^[•●▪◦‣∙]/
+
+/** Native PDF text: blank lines separate paragraphs; single newlines are just wraps. */
+export function cleanPageText(text: string): string {
+  const lines = text
     .replace(/---PAGE\s+\d+---/g, '')
     .replace(/\f/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim()
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+
+  const paragraphs: string[] = []
+  let current = ''
+
+  for (const line of reattachDropCaps(lines)) {
+    if (!line || BULLET_START.test(line)) {
+      if (current) paragraphs.push(current)
+      current = line
+      continue
+    }
+    current = current ? joinWrappedLine(current, line) : line
+  }
+  if (current) paragraphs.push(current)
+
+  return paragraphs.join('\n\n')
+}
+
+function joinWrappedLine(prev: string, next: string): string {
+  // Only drop a hyphen between lowercase letters ("exam-" + "ple"); keep it
+  // for "COVID-" + "19" or "Smith-" + "Jones".
+  const hyphen = prev.match(/^(.*[a-z])[-­‐]$/)
+  if (hyphen && /^[a-z]/.test(next)) return `${hyphen[1]}${next}`
+  if (/[-‐–—]$/.test(prev)) return `${prev}${next}`
+  return `${prev} ${next}`
 }
 
 function titleFromFileName(sourceName: string): string {
