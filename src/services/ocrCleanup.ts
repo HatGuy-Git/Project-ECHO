@@ -86,8 +86,10 @@ export function reattachDropCaps(lines: string[]): string[] {
       }
     }
 
+    // "X marks the spot" looks exactly like a split drop cap, so only merge
+    // same-line splits into known words.
     const split = atParagraphStart ? line.match(SPLIT_DROP_CAP) : null
-    if (split && isPlausibleDropCap(split[2], split[3])) {
+    if (split && COMMON_MERGED_WORDS.has(`${split[2]}${split[3]}`.toLowerCase())) {
       out.push(`${split[1]}${split[2]}${split[3]}${split[4]}`)
       continue
     }

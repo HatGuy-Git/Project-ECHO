@@ -63,6 +63,15 @@ describe('drop caps', () => {
     expect(reattachDropCaps(lines)).toEqual(lines)
   })
 
+  it('does not merge a same-line letter into an unknown word at a paragraph start', () => {
+    expect(reattachDropCaps(['X marks the spot on the map.'])).toEqual([
+      'X marks the spot on the map.',
+    ])
+    expect(reattachDropCaps(['B vitamins are found in many foods.'])).toEqual([
+      'B vitamins are found in many foods.',
+    ])
+  })
+
   it('leaves a lone capital alone when the next line starts uppercase', () => {
     expect(reattachDropCaps(['T', 'The rain'])).toEqual(['T', 'The rain'])
   })
