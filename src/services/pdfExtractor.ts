@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import { TN_DL_MANUAL_PDF_PROXY } from '../constants/tennesseeDriver'
 import { looksLikePoorScanText } from './ocrCleanup'
+import { layoutTextLines } from './pdfLineLayout'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -36,7 +37,7 @@ export async function extractTextFromPdf(data: ArrayBuffer): Promise<string> {
       textItems.push(textItem)
     }
 
-    structuredPages.push(`---PAGE ${pageNum}---\n${extractStructuredLines(textItems)}`)
+    structuredPages.push(`---PAGE ${pageNum}---\n${layoutTextLines(textItems)}`)
     simplePages.push(`---PAGE ${pageNum}---\n${textItems.map((item) => item.str).join(' ')}`)
   }
 
@@ -75,7 +76,9 @@ export async function extractPdfPages(
       textItems.push(item as { str: string; transform?: number[] })
     }
 
-    const structured = normalizeExtractedText(extractStructuredLines(textItems))
+    const structured = normalizeExtractedText(
+      layoutTextLines(textItems, { paragraphBreaks: true })
+    )
     const simple = normalizeExtractedText(textItems.map((item) => item.str).join(' '))
     const text = structured.length >= simple.length ? structured : simple
 
@@ -103,29 +106,6 @@ export async function extractPdfPages(
   }
 
   return pages
-}
-
-function extractStructuredLines(
-  items: { str: string; transform?: number[] }[]
-): string {
-  const lineBuckets = new Map<number, string[]>()
-
-  for (const item of items) {
-    const y = Math.round((item.transform?.[5] ?? 0) / 4) * 4
-    const bucket = lineBuckets.get(y) ?? []
-    bucket.push(item.str)
-    lineBuckets.set(y, bucket)
-  }
-
-  const sortedYs = [...lineBuckets.keys()].sort((a, b) => b - a)
-  const lines: string[] = []
-
-  for (const y of sortedYs) {
-    const line = lineBuckets.get(y)!.join(' ').replace(/\s+/g, ' ').trim()
-    if (line) lines.push(line)
-  }
-
-  return lines.join('\n')
 }
 
 function hasSectionBMarkers(text: string): boolean {

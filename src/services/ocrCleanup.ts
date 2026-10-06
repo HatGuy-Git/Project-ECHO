@@ -1,14 +1,101 @@
 /** Clean Tesseract output from photographed / scanned book pages. */
 
 export function cleanOcrText(text: string): string {
-  const lines = text
+  const rawLines = text
     .replace(/\r\n/g, '\n')
     .split('\n')
-    .map((line) => cleanOcrLine(line))
-    .filter((line) => isUsefulOcrLine(line))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
 
-  const dehyphenated = joinHyphenatedLines(lines)
-  return reflowOcrParagraphs(dehyphenated)
+  // Blank lines are the OCR engine's own paragraph signal, so they split blocks.
+  const blocks: string[][] = [[]]
+  // Drop caps go first: cleanOcrLine strips a leading "I " and the short-line
+  // filter drops a lone "T", either of which would lose the letter.
+  for (const raw of reattachDropCaps(rawLines)) {
+    const block = blocks[blocks.length - 1]
+    if (!raw) {
+      if (block.length > 0) blocks.push([])
+      continue
+    }
+    const line = cleanOcrLine(raw)
+    if (isUsefulOcrLine(line)) block.push(line)
+  }
+
+  return mergeContinuedBlocks(blocks)
+    .flatMap((block) => reflowOcrParagraphs(joinHyphenatedLines(block)))
+    .join('\n\n')
+    .trim()
+}
+
+const SINGLE_LETTER_WORDS = new Set(['A', 'I', 'O'])
+
+// Words a drop cap commonly starts; merging into one of these is always safe.
+const COMMON_MERGED_WORDS = new Set([
+  'about', 'above', 'across', 'after', 'again', 'against', 'all', 'almost',
+  'along', 'already', 'also', 'although', 'always', 'among', 'an', 'and',
+  'another', 'any', 'are', 'around', 'as', 'at', 'be', 'because', 'before',
+  'being', 'both', 'but', 'by', 'can', 'do', 'each', 'even', 'ever', 'every',
+  'few', 'for', 'from', 'good', 'great', 'had', 'has', 'have', 'he', 'her',
+  'here', 'his', 'how', 'if', 'in', 'indeed', 'instead', 'into', 'is', 'it',
+  'its', 'just', 'last', 'let', 'like', 'long', 'many', 'more', 'most',
+  'much', 'my', 'never', 'no', 'not', 'nothing', 'now', 'of', 'on', 'once',
+  'one', 'only', 'or', 'our', 'out', 'over', 'perhaps', 'she', 'since', 'so',
+  'some', 'still', 'such', 'than', 'that', 'the', 'their', 'them', 'then',
+  'there', 'these', 'they', 'this', 'those', 'though', 'through', 'thus',
+  'to', 'today', 'very', 'was', 'we', 'well', 'were', 'what', 'when',
+  'where', 'which', 'while', 'who', 'why', 'with', 'would', 'yet', 'you',
+  'your',
+])
+
+// Words that read naturally after a lone letter ("B and C", "X is ..."),
+// so "B and" is more likely a label than a split drop cap.
+const FOLLOWS_LONE_LETTER = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'for', 'from',
+  'had', 'has', 'if', 'in', 'is', 'of', 'on', 'or', 'the', 'to', 'vs',
+  'was', 'were', 'will', 'with',
+])
+
+function isPlausibleDropCap(letter: string, fragment: string): boolean {
+  if (COMMON_MERGED_WORDS.has(`${letter}${fragment}`.toLowerCase())) return true
+  // "I am", "A dog", "O ye" are real phrases; only whitelisted merges are safe.
+  if (SINGLE_LETTER_WORDS.has(letter)) return false
+  return !FOLLOWS_LONE_LETTER.has(fragment.toLowerCase())
+}
+
+const LONE_DROP_CAP = /^(["'“‘]?)\s*([A-Z])\s*["'”’]?$/
+const SPLIT_DROP_CAP = /^(["'“‘]?)([A-Z]) ([a-z]+)(.*)$/
+
+/** Rejoin a decorative first letter that OCR / layout split from its word. */
+export function reattachDropCaps(lines: string[]): string[] {
+  const out: string[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const prev = out[out.length - 1]
+    const atParagraphStart = !prev || /[.!?:]["')\]]?$/.test(prev)
+
+    const lone = line.match(LONE_DROP_CAP)
+    if (lone) {
+      // Allow one blank line between the letter and its word.
+      const nextIndex = lines[i + 1] === '' ? i + 2 : i + 1
+      const next = lines[nextIndex] ?? ''
+      const fragment = next.match(/^[a-z]+/)?.[0]
+      if (fragment && isPlausibleDropCap(lone[2], fragment)) {
+        out.push(`${lone[1]}${lone[2]}${next}`)
+        i = nextIndex
+        continue
+      }
+    }
+
+    const split = atParagraphStart ? line.match(SPLIT_DROP_CAP) : null
+    if (split && isPlausibleDropCap(split[2], split[3])) {
+      out.push(`${split[1]}${split[2]}${split[3]}${split[4]}`)
+      continue
+    }
+
+    out.push(line)
+  }
+
+  return out
 }
 
 export function looksLikePoorScanText(text: string): boolean {
@@ -49,7 +136,8 @@ function looksLikeFusedWords(words: string[]): boolean {
 function cleanOcrLine(line: string): string {
   return line
     .replace(/[ \t]+/g, ' ')
-    .replace(/^\s*[|Il]\s+/g, '')
+    // A page-edge bar reads as "|", "l" or "I"; keep "I" when it is the pronoun.
+    .replace(/^\s*(?:[|l]|I(?!\s+[a-z]))\s+/g, '')
     .replace(/\s+[|Il]\s*$/g, '')
     .replace(/\s+\|\s+/g, ' ')
     .replace(/\s+BN\s*$/g, '')
@@ -100,9 +188,41 @@ function joinHyphenatedLines(lines: string[]): string[] {
   return joined
 }
 
-function reflowOcrParagraphs(lines: string[]): string {
+/** A blank line followed by a mid-sentence continuation is a layout gap, not a paragraph. */
+function mergeContinuedBlocks(blocks: string[][]): string[][] {
+  const merged: string[][] = []
+
+  for (const block of blocks) {
+    if (block.length === 0) continue
+    const prev = merged[merged.length - 1]
+    const last = prev?.[prev.length - 1]
+    if (prev && last && continuesAcrossBreak(last, block[0])) {
+      prev.push(...block)
+      continue
+    }
+    merged.push([...block])
+  }
+
+  return merged
+}
+
+function continuesAcrossBreak(prev: string, next: string): boolean {
+  if (isHeadingLine(prev) || isHeadingLine(next)) return false
+  if (/\w[‐‑‒–—-]$/.test(prev) && /^[A-Za-z]/.test(next)) return true
+  return !/[.!?:;]["')\]]?$/.test(prev) && /^[a-z]/.test(next)
+}
+
+// A sentence-ending line shorter than this fraction of the block's typical
+// line is treated as the last line of a paragraph.
+const SHORT_LINE_RATIO = 0.75
+const MIN_LINES_FOR_WIDTH = 3
+
+function reflowOcrParagraphs(lines: string[]): string[] {
+  const bodyLengths = lines.filter((line) => !isHeadingLine(line)).map((line) => line.length)
+  const typicalLength = bodyLengths.length >= MIN_LINES_FOR_WIDTH ? medianOf(bodyLengths) : 0
   const paragraphs: string[] = []
   let current = ''
+  let prevLine = ''
 
   const flush = () => {
     if (current) paragraphs.push(current.trim())
@@ -113,29 +233,41 @@ function reflowOcrParagraphs(lines: string[]): string {
     if (isHeadingLine(line)) {
       flush()
       paragraphs.push(line)
+      prevLine = ''
       continue
     }
 
     if (!current) {
       current = line
+      prevLine = line
       continue
     }
 
-    const prevEndsSentence = /[.!?]["']?$/.test(current)
-    const nextStartsLower = /^[a-z]/.test(line)
-    const prevLooksWrapped = current.length < 90 || !prevEndsSentence
-
-    if (nextStartsLower || (prevLooksWrapped && !prevEndsSentence)) {
+    if (startsNewParagraph(prevLine, line, typicalLength)) {
+      flush()
+      current = line
+    } else {
       current = `${current} ${line}`
-      continue
     }
-
-    flush()
-    current = line
+    prevLine = line
   }
 
   flush()
-  return paragraphs.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
+  return paragraphs
+}
+
+function startsNewParagraph(prevLine: string, line: string, typicalLength: number): boolean {
+  if (/^[a-z]/.test(line)) return false
+  if (!/[.!?]["']?$/.test(prevLine)) return false
+  // A sentence that ends on a near-full-width line is just wrapping. Without
+  // enough lines to judge width, prefer one paragraph over a false break.
+  return typicalLength > 0 && prevLine.length < typicalLength * SHORT_LINE_RATIO
+}
+
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
 }
 
 function isHeadingLine(line: string): boolean {
