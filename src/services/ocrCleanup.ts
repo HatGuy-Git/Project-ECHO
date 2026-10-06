@@ -27,7 +27,23 @@ export function looksLikePoorScanText(text: string): boolean {
   const junk = words.filter((word) => /^[|Il1\/\\]{1,3}$/.test(word)).length
   if (junk / words.length > 0.08) return true
 
+  if (looksLikeFusedWords(words)) return true
+
   return false
+}
+
+/**
+ * Detects PDFs with a pre-existing invisible text layer (e.g. "OCR for search"
+ * done before upload) where words were run together without spaces. pdf.js's
+ * own space-insertion heuristic trusts that layer's glyph spacing, so this
+ * passes the ordinary letter-density checks above and needs its own signal.
+ */
+function looksLikeFusedWords(words: string[]): boolean {
+  const fused = words.filter(
+    (word) => /[a-z]{2,}[A-Z]/.test(word) || /^[a-z]{14,}$/.test(word)
+  ).length
+
+  return fused >= 2 && fused / words.length > 0.015
 }
 
 function cleanOcrLine(line: string): string {
