@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Screen } from '../../App'
 import type { ApiKeys, ReadingDocument } from '../../types'
 import { useNarrationPlayback } from '../../hooks/useNarrationPlayback'
@@ -7,8 +7,10 @@ import {
   TUTOR_VOICE,
   type ElevenLabsVoice,
 } from '../../services/textToSpeech'
-import HighlightedText from '../ui/HighlightedText'
+import { splitTextIntoBlocks } from '../../services/studyContentParser'
+import ParaphraseModal from '../ui/ParaphraseModal'
 import PlaybackControls from '../ui/PlaybackControls'
+import StudyContent from '../ui/StudyContent'
 import VoiceSelect from '../ui/VoiceSelect'
 
 interface ReadingReaderProps {
@@ -36,6 +38,13 @@ export default function ReadingReader({
   const preferredVoiceId =
     document.voiceId || apiKeys.tutorVoiceId || apiKeys.elevenLabsVoiceId || TUTOR_VOICE.defaultVoiceId
   const resolvedVoiceId = resolveVoiceId(preferredVoiceId, voices)
+  const [explain, setExplain] = useState<{ text: string; resumeOnClose: boolean } | null>(null)
+  const isExplainOpen = explain !== null
+  // Markers stay in the text so per-block word offsets match the narration of chunk.content.
+  const blocks = useMemo(
+    () => splitTextIntoBlocks(chunk?.content ?? '', { keepMarkers: true }),
+    [chunk?.content]
+  )
 
   const {
     audioRef,
@@ -50,6 +59,7 @@ export default function ReadingReader({
     error,
     togglePlay,
     pause,
+    play,
     skip,
     seek,
     seekToWord,
@@ -87,6 +97,7 @@ export default function ReadingReader({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isExplainOpen) return
       if (e.code !== 'Space') return
       if (isTypingInField(e.target)) return
       e.preventDefault()
@@ -95,7 +106,7 @@ export default function ReadingReader({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [togglePlay])
+  }, [togglePlay, isExplainOpen])
 
   if (!chunk) {
     return (
@@ -111,6 +122,17 @@ export default function ReadingReader({
   const handleWordClick = (wordIndex: number) => {
     if (isPlaying) pause()
     seekToWord(wordIndex)
+  }
+
+  const openExplain = (text: string) => {
+    setExplain({ text, resumeOnClose: isPlaying })
+    pause()
+  }
+
+  const closeExplain = () => {
+    const resume = explain?.resumeOnClose
+    setExplain(null)
+    if (resume) play()
   }
 
   const total = document.chunks.length
@@ -160,15 +182,15 @@ export default function ReadingReader({
 
         <main className="max-w-3xl mx-auto w-full">
           <div className="card border-amber-400/20 p-6 mb-6">
-            <p className="text-lg leading-relaxed text-gray-200 whitespace-pre-wrap">
-              <HighlightedText
-                message={chunk.content}
-                activeWordIndex={activeWordIndex}
-                theme="tutor"
-                onWordClick={handleWordClick}
-                wordClickEnabled={isReady && !isPlaying}
-              />
-            </p>
+            <StudyContent
+              blocks={blocks}
+              activeWordIndex={activeWordIndex}
+              theme="tutor"
+              accent="amber"
+              onWordClick={handleWordClick}
+              wordClickEnabled={isReady && !isPlaying}
+              onExplainBlock={openExplain}
+            />
           </div>
 
           <div className="flex flex-wrap gap-3 justify-between">
@@ -216,6 +238,16 @@ export default function ReadingReader({
           onCycleSpeed={cycleSpeed}
         />
       </div>
+
+      {explain && (
+        <ParaphraseModal
+          sourceText={explain.text}
+          apiKeys={apiKeys}
+          voiceId={resolvedVoiceId}
+          accent="amber"
+          onClose={closeExplain}
+        />
+      )}
     </div>
   )
 }

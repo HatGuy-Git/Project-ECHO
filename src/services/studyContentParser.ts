@@ -4,10 +4,43 @@ import { countWords } from '../utils/wordHighlight'
 const SUBHEADING_PATTERN =
   /^[A-Z][A-Za-z0-9\s,'()/-]{3,70}$/
 
-const BULLET_PATTERN = /^[•●▪-]\s+/
-const NUMBERED_PATTERN = /^(\d{1,2})[.)]\s+/
+export const BULLET_PATTERN = /^[•●▪-]\s+/
+export const NUMBERED_PATTERN = /^(\d{1,2})[.)]\s+/
 
 export function parseChapterIntoBlocks(rawBody: string): StudyBlock[] {
+  return mergeAdjacentParagraphs(
+    groupIntoBlocks(rawBody, true, (text) => ({
+      type: classifyParagraph(text),
+      text: polishText(text),
+    }))
+  )
+}
+
+/**
+ * Generic paragraph/bullet/numbered/subheading splitter with no Tennessee-specific
+ * classification. With keepMarkers, list glyphs and numbers stay in the item text and
+ * no text is rewritten, so block word counts match countWords(rawBody) exactly.
+ */
+export function splitTextIntoBlocks(
+  rawBody: string,
+  { keepMarkers = false }: { keepMarkers?: boolean } = {}
+): StudyBlock[] {
+  return groupIntoBlocks(rawBody, !keepMarkers, (text) => ({
+    type: isSubheading(text) ? 'subheading' : 'paragraph',
+    text,
+  }))
+}
+
+function groupIntoBlocks(
+  rawBody: string,
+  stripMarkers: boolean,
+  toTextBlock: (text: string) => StudyBlock
+): StudyBlock[] {
+  const stripBullet = (line: string) =>
+    stripMarkers ? line.replace(BULLET_PATTERN, '').trim() : line
+  const stripNumber = (line: string) =>
+    stripMarkers ? line.replace(NUMBERED_PATTERN, '').trim() : line
+
   const paragraphs = splitIntoParagraphs(rawBody)
   const blocks: StudyBlock[] = []
   let pendingBullets: string[] = []
@@ -35,15 +68,8 @@ export function parseChapterIntoBlocks(rawBody: string): StudyBlock[] {
     if (lines.every((l) => BULLET_PATTERN.test(l))) {
       flushNumbered()
       for (const line of lines) {
-        pendingBullets.push(line.replace(BULLET_PATTERN, '').trim())
+        pendingBullets.push(stripBullet(line))
       }
-      continue
-    }
-
-    // Single paragraph that's one bullet
-    if (lines.length === 1 && BULLET_PATTERN.test(lines[0])) {
-      flushNumbered()
-      pendingBullets.push(lines[0].replace(BULLET_PATTERN, '').trim())
       continue
     }
 
@@ -51,7 +77,7 @@ export function parseChapterIntoBlocks(rawBody: string): StudyBlock[] {
     if (lines.every((l) => NUMBERED_PATTERN.test(l))) {
       flushBullets()
       for (const line of lines) {
-        pendingNumbered.push(line.replace(NUMBERED_PATTERN, '').trim())
+        pendingNumbered.push(stripNumber(line))
       }
       continue
     }
@@ -59,15 +85,13 @@ export function parseChapterIntoBlocks(rawBody: string): StudyBlock[] {
     flushBullets()
     flushNumbered()
 
-    const text = lines.join(' ')
-    const blockType = classifyParagraph(text)
-    blocks.push({ type: blockType, text: polishText(text) })
+    blocks.push(toTextBlock(lines.join(' ')))
   }
 
   flushBullets()
   flushNumbered()
 
-  return mergeAdjacentParagraphs(blocks)
+  return blocks
 }
 
 export function blocksToSpeechText(blocks: StudyBlock[]): string {

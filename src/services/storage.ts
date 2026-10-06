@@ -24,6 +24,13 @@ interface SettingsRecord {
   value: string
 }
 
+export interface CachedParaphrase {
+  /** Normalized source text, checked on read to rule out hash collisions */
+  source: string
+  paraphrase: string
+  createdAt: string
+}
+
 // Create the database
 const db = new Dexie('ProjectEchoDB') as Dexie & {
   passages: EntityTable<PassageRecord, 'id'>
@@ -206,6 +213,20 @@ export const storage = {
 
   async clearReadingDocument(): Promise<void> {
     await db.settings.put({ key: 'readingDocument', value: '' })
+  },
+
+  async saveParaphrase(key: string, entry: CachedParaphrase): Promise<void> {
+    await db.settings.put({ key, value: JSON.stringify(entry) })
+  },
+
+  async getParaphrase(key: string): Promise<CachedParaphrase | null> {
+    const record = await db.settings.get(key)
+    if (!record?.value) return null
+    try {
+      return JSON.parse(record.value) as CachedParaphrase
+    } catch {
+      return null
+    }
   },
 
   // Training progress

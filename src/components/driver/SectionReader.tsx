@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ApiKeys, DriverManualData, StudySection } from '../../types'
 
@@ -9,6 +9,8 @@ import StudyContent from '../ui/StudyContent'
 import HighlightedText from '../ui/HighlightedText'
 
 import PlaybackControls from '../ui/PlaybackControls'
+
+import ParaphraseModal from '../ui/ParaphraseModal'
 
 
 
@@ -50,6 +52,12 @@ export default function SectionReader({
 
   const hasStructuredContent = (section.blocks?.length ?? 0) > 0
 
+  const voiceId = apiKeys.tutorVoiceId || apiKeys.elevenLabsVoiceId
+
+  const [explain, setExplain] = useState<{ text: string; resumeOnClose: boolean } | null>(null)
+
+  const isExplainOpen = explain !== null
+
 
 
   const {
@@ -80,6 +88,8 @@ export default function SectionReader({
 
     pause,
 
+    play,
+
     skip,
 
     seek,
@@ -96,7 +106,7 @@ export default function SectionReader({
 
     elevenLabsApiKey: apiKeys.elevenLabs,
 
-    voiceId: apiKeys.tutorVoiceId || apiKeys.elevenLabsVoiceId,
+    voiceId,
 
   })
 
@@ -105,6 +115,8 @@ export default function SectionReader({
   useEffect(() => {
 
     const onKeyDown = (e: KeyboardEvent) => {
+
+      if (isExplainOpen) return
 
       if (e.code !== 'Space') return
 
@@ -122,7 +134,7 @@ export default function SectionReader({
 
     return () => window.removeEventListener('keydown', onKeyDown)
 
-  }, [togglePlay])
+  }, [togglePlay, isExplainOpen])
 
 
 
@@ -145,6 +157,24 @@ export default function SectionReader({
     }
 
     seekToWord(wordIndex)
+
+  }
+
+  const openExplain = (text: string) => {
+
+    setExplain({ text, resumeOnClose: isPlaying })
+
+    pause()
+
+  }
+
+  const closeExplain = () => {
+
+    const resume = explain?.resumeOnClose
+
+    setExplain(null)
+
+    if (resume) play()
 
   }
 
@@ -253,6 +283,8 @@ export default function SectionReader({
                 onWordClick={handleWordClick}
 
                 wordClickEnabled={isReady && !isPlaying}
+
+                onExplainBlock={openExplain}
 
               />
 
@@ -381,6 +413,24 @@ export default function SectionReader({
         />
 
       </div>
+
+      {explain && (
+
+        <ParaphraseModal
+
+          sourceText={explain.text}
+
+          apiKeys={apiKeys}
+
+          voiceId={voiceId}
+
+          accent="sky"
+
+          onClose={closeExplain}
+
+        />
+
+      )}
 
     </div>
 
